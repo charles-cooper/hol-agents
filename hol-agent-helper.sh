@@ -2,18 +2,24 @@
 # hol-agent-helper.sh - HOL4 agent interface for interactive proof development
 #
 # Usage:
-#   ./hol-agent-helper.sh start    - Start HOL session in background
-#   ./hol-agent-helper.sh send CMD - Send command and wait for response
-#   ./hol-agent-helper.sh stop     - Stop HOL session
-#   ./hol-agent-helper.sh status   - Check if HOL is running
+#   ./hol-agent-helper.sh start [DIR]  - Start HOL session in background (optionally in DIR)
+#   ./hol-agent-helper.sh send CMD     - Send command and wait for response
+#   ./hol-agent-helper.sh send:FILE    - Send contents of FILE
+#   ./hol-agent-helper.sh stop         - Stop HOL session
+#   ./hol-agent-helper.sh status       - Check if HOL is running
+#
+# If DIR contains a .hol_init.sml file, it will be loaded after HOL starts.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIFO_IN=/tmp/hol_agent_in
 LOG=/tmp/hol_agent.log
 PIDFILE=/tmp/hol_agent.pid
-CMDFILE="$SCRIPT_DIR/.hol_cmd.sml"
+WORKDIR_FILE=/tmp/hol_agent_workdir
 
 start_hol() {
+    local workdir="${1:-.}"
+    workdir="$(cd "$workdir" && pwd)"
+
     if [ -f "$PIDFILE" ] && kill -0 "$(head -1 $PIDFILE)" 2>/dev/null; then
         echo "HOL already running (PID: $(head -1 $PIDFILE))"
         return 0
@@ -23,21 +29,32 @@ start_hol() {
     mkfifo $FIFO_IN
     touch $LOG
 
+    # Save working directory for later commands
+    echo "$workdir" > $WORKDIR_FILE
+
     # Start HOL reading from FIFO, output to log
-    # tail -f keeps the FIFO open (otherwise first write closes HOL's stdin)
-    tail -f $FIFO_IN | stdbuf -oL hol 2>&1 | tee -a $LOG &
+    # Use script -qfc to force PTY allocation for proper unbuffering
+    cd "$workdir"
+    tail -f $FIFO_IN | script -qfc "hol" /dev/null 2>&1 | tee -a $LOG &
     PIPELINE_PID=$!
 
     echo "$PIPELINE_PID" > $PIDFILE
 
     # Wait for HOL to initialize (look for the prompt in log)
     echo "Waiting for HOL to initialize..."
-    local timeout=50
+    local timeout=60
     local elapsed=0
     while [ $elapsed -lt $timeout ]; do
         if grep -q "For introductory HOL help" $LOG 2>/dev/null; then
-            sleep 1  # Give it a moment more
-            echo "HOL ready (PID: $PIPELINE_PID)"
+            sleep 0.5  # Give it a moment more
+            echo "HOL ready (PID: $PIPELINE_PID) in $workdir"
+
+            # Load init file if present
+            if [ -f "$workdir/.hol_init.sml" ]; then
+                echo "Loading $workdir/.hol_init.sml..."
+                send_file "$workdir/.hol_init.sml"
+            fi
+
             return 0
         fi
         sleep 0.1
@@ -46,7 +63,7 @@ start_hol() {
 
     echo "HOL failed to start (timeout)"
     kill $PIPELINE_PID 2>/dev/null
-    rm -f $PIDFILE
+    rm -f $PIDFILE $WORKDIR_FILE
     return 1
 }
 
@@ -103,6 +120,7 @@ send_file() {
 
     # Send file contents through FIFO
     cat "$file" > $FIFO_IN
+    echo "" > $FIFO_IN  # Ensure newline
     echo "val _ = print \"$sentinel\\n\";" > $FIFO_IN
 
     # Wait for sentinel in output
@@ -129,13 +147,16 @@ stop_hol() {
 
     read HOL_PID CAT_PID < $PIDFILE
     kill $HOL_PID $CAT_PID 2>/dev/null
-    rm -f $PIDFILE $FIFO_IN
+    # Also kill any script/tail processes
+    pkill -P $HOL_PID 2>/dev/null
+    rm -f $PIDFILE $FIFO_IN $WORKDIR_FILE
     echo "HOL stopped"
 }
 
 status_hol() {
     if [ -f "$PIDFILE" ] && kill -0 "$(awk '{print $1}' $PIDFILE)" 2>/dev/null; then
-        echo "HOL running (PID: $(awk '{print $1}' $PIDFILE))"
+        local workdir=$(cat $WORKDIR_FILE 2>/dev/null || echo "unknown")
+        echo "HOL running (PID: $(awk '{print $1}' $PIDFILE)) in $workdir"
         return 0
     else
         echo "HOL not running"
@@ -146,7 +167,12 @@ status_hol() {
 
 case "$1" in
     start)
-        start_hol
+        shift
+        start_hol "$1"
+        ;;
+    start:*)
+        # start:DIR - start in DIR
+        start_hol "${1#start:}"
         ;;
     send)
         shift
@@ -163,7 +189,7 @@ case "$1" in
         status_hol
         ;;
     *)
-        echo "Usage: $0 {start|send CMD|send:FILE|stop|status}"
+        echo "Usage: $0 {start [DIR]|start:DIR|send CMD|send:FILE|stop|status}"
         exit 1
         ;;
 esac
