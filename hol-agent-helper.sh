@@ -33,9 +33,9 @@ start_hol() {
     echo "$workdir" > $WORKDIR_FILE
 
     # Start HOL reading from FIFO, output to log
-    # Use script -qfc to force PTY allocation for proper unbuffering
+    # tail -f keeps the FIFO open (otherwise first write closes HOL's stdin)
     cd "$workdir"
-    tail -f $FIFO_IN | script -qfc "hol" /dev/null 2>&1 | tee -a $LOG &
+    tail -f $FIFO_IN | hol 2>&1 | tee -a $LOG &
     PIPELINE_PID=$!
 
     echo "$PIPELINE_PID" > $PIDFILE
