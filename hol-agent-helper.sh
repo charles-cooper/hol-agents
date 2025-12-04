@@ -55,7 +55,9 @@ start_hol() {
                 send_file "$workdir/.hol_init.sml"
             fi
 
-            return 0
+            # Disown the background process so the script can exit cleanly
+            disown $PIPELINE_PID 2>/dev/null
+            exit 0
         fi
         sleep 0.1
         elapsed=$((elapsed + 1))
