@@ -165,6 +165,14 @@ status_hol() {
     fi
 }
 
+log_hol() {
+    if [ ! -f "$LOG" ]; then
+        echo "No log file found"
+        return 1
+    fi
+    cat "$LOG"
+}
+
 case "$1" in
     start)
         shift
@@ -188,8 +196,11 @@ case "$1" in
     status)
         status_hol
         ;;
+    log)
+        log_hol
+        ;;
     *)
-        echo "Usage: $0 {start [DIR]|start:DIR|send CMD|send:FILE|stop|status}"
+        echo "Usage: $0 {start [DIR]|start:DIR|send CMD|send:FILE|stop|status|log}"
         exit 1
         ;;
 esac
