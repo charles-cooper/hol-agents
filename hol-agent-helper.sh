@@ -131,8 +131,14 @@ stop_hol() {
     fi
 
     local pid=$(head -1 $PIDFILE)
-    kill $pid 2>/dev/null
-    pkill -P $pid 2>/dev/null
+
+    # setsid creates a new session with session ID = pid
+    # Kill entire session to clean up tail -f and hol
+    pkill -s $pid 2>/dev/null
+
+    # Fallback: kill the process group
+    kill -- -$pid 2>/dev/null
+
     rm -f $PIDFILE $FIFO_IN $WORKDIR_FILE
     echo "HOL stopped"
 }
