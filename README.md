@@ -42,7 +42,8 @@ echo 'g `!m:num. m + 0 = m`;' > .hol_cmd.sml
 ### Check status
 
 ```bash
-./hol-agent-helper.sh status
+./hol-agent-helper.sh status           # Check current directory
+./hol-agent-helper.sh status:/path/to/dir  # Check specific directory
 ```
 
 ### Stop the session

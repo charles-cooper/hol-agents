@@ -10,7 +10,8 @@ This document describes how AI agents should use the `hol-agent-helper.sh` scrip
 | `./hol-agent-helper.sh send 'code'` | Send simple SML code |
 | `./hol-agent-helper.sh send:FILE` | Send contents of FILE |
 | `./hol-agent-helper.sh stop` | Stop HOL session |
-| `./hol-agent-helper.sh status` | Check if HOL is running |
+| `./hol-agent-helper.sh status` | Check if HOL is running for current dir |
+| `./hol-agent-helper.sh status:DIR` | Check if HOL is running for DIR |
 
 ## Setup
 
