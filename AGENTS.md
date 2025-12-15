@@ -11,6 +11,8 @@ This document describes how AI agents should use the `hol-agent-helper.sh` scrip
 | `./hol-agent-helper.sh send:FILE` | Send contents of FILE |
 | `./hol-agent-helper.sh stop` | Stop HOL session |
 | `./hol-agent-helper.sh status` | Check if HOL is running for current dir |
+| `./hol-agent-helper.sh status:DIR` | Check if HOL is running for DIR |
+| `./hol-agent-helper.sh log` | Show session log |
 | `./hol-agent-helper.sh load-to FILE LINE` | **Load script up to LINE (recommended)** |
 | `./hol-agent-helper.sh cleanup` | Kill ALL HOL sessions |
 
