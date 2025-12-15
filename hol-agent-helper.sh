@@ -268,7 +268,7 @@ load_to() {
 
     # Get dependencies using holdeptool.exe
     echo "Getting dependencies with holdeptool.exe..."
-    local holdeptool="$HOME/HOL/bin/holdeptool.exe"
+    local holdeptool="${HOLDIR:-$HOME/HOL}/bin/holdeptool.exe"
     if [ ! -x "$holdeptool" ]; then
         echo "ERROR: holdeptool.exe not found at $holdeptool"
         return 1
