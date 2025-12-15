@@ -94,7 +94,8 @@ start_hol() {
     # - setsid creates new session so HOL isn't killed when parent exits
     # - fd redirections detach from parent's tty so script doesn't wait for HOL
     cd "$workdir"
-    setsid sh -c "tail -f '$fifo' | hol --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
+    local hol_bin="${HOLDIR:-$HOME/HOL}/bin/hol"
+    setsid sh -c "tail -f '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
     local pipeline_pid=$!
 
     echo "$pipeline_pid" > "$pidfile"
@@ -202,6 +203,146 @@ log_hol() {
     tr '\0' '\n' < "$LOG"
 }
 
+# Load script up to a given line number
+# Usage: load_to SCRIPT_FILE LINE_NUMBER
+load_to() {
+    local script_file="$1"
+    local line_num="$2"
+
+    if [ -z "$script_file" ] || [ -z "$line_num" ]; then
+        echo "Usage: $0 load-to SCRIPT_FILE LINE_NUMBER"
+        return 1
+    fi
+
+    if [ ! -f "$script_file" ]; then
+        echo "ERROR: Script file not found: $script_file"
+        return 1
+    fi
+
+    # Get absolute path
+    script_file="$(cd "$(dirname "$script_file")" && pwd)/$(basename "$script_file")"
+    local script_dir="$(dirname "$script_file")"
+
+    # Validate line number is a positive integer
+    if ! [[ "$line_num" =~ ^[0-9]+$ ]] || [ "$line_num" -lt 1 ]; then
+        echo "ERROR: Line number must be a positive integer"
+        return 1
+    fi
+
+    # Check total lines in file
+    local total_lines=$(wc -l < "$script_file")
+    if [ "$line_num" -gt "$total_lines" ]; then
+        echo "ERROR: Line $line_num exceeds file length ($total_lines lines)"
+        return 1
+    fi
+
+    # Validate line is blank
+    local target_line=$(sed -n "${line_num}p" "$script_file")
+    if [ -n "$(echo "$target_line" | tr -d '[:space:]')" ]; then
+        echo "ERROR: Line $line_num is not blank: '$target_line'"
+        echo "The load-to command requires a blank line at the cursor position."
+        return 1
+    fi
+
+    # Find closest non-blank line above and validate it looks like a block ender
+    local prev_line_num=$((line_num - 1))
+    local prev_line=""
+    while [ "$prev_line_num" -ge 1 ]; do
+        prev_line=$(sed -n "${prev_line_num}p" "$script_file")
+        if [ -n "$(echo "$prev_line" | tr -d '[:space:]')" ]; then
+            break
+        fi
+        prev_line_num=$((prev_line_num - 1))
+    done
+
+    if [ "$prev_line_num" -ge 1 ]; then
+        # Check if it's a block ender: single capitalized word (End, QED, Termination) OR ends with semicolon
+        local trimmed=$(echo "$prev_line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [[ "$trimmed" =~ ^[A-Z][A-Za-z]*$ ]] || [[ "$trimmed" =~ \;$ ]]; then
+            echo "Block ender found at line $prev_line_num: $trimmed"
+        else
+            echo "WARNING: Line $prev_line_num doesn't look like a block ender: '$trimmed'"
+            echo "Expected single capitalized word (End, QED, etc.) or line ending with semicolon."
+            echo "Proceeding anyway..."
+        fi
+    fi
+
+    # Get dependencies using holdeptool.exe
+    echo "Getting dependencies with holdeptool.exe..."
+    local holdeptool="${HOLDIR:-$HOME/HOL}/bin/holdeptool.exe"
+    if [ ! -x "$holdeptool" ]; then
+        echo "ERROR: holdeptool.exe not found at $holdeptool"
+        return 1
+    fi
+
+    local deps=$("$holdeptool" "$script_file" 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "ERROR: holdeptool.exe failed: $deps"
+        return 1
+    fi
+
+    # Stop any existing session and start fresh in the script's directory
+    echo "Restarting HOL session in $script_dir..."
+    cd "$script_dir"
+
+    # Update session variables for the new directory
+    SESSION_DIR=$(session_dir_for "$script_dir")
+    FIFO_IN="$SESSION_DIR/in"
+    LOG="$SESSION_DIR/log"
+    PIDFILE="$SESSION_DIR/pid"
+    WORKDIR_FILE="$SESSION_DIR/workdir"
+
+    stop_hol 2>/dev/null
+    start_hol "$script_dir"
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to start HOL"
+        return 1
+    fi
+
+    # Load dependencies
+    echo "Loading dependencies..."
+    local dep_count=0
+    for dep in $deps; do
+        # Skip empty lines
+        [ -z "$dep" ] && continue
+        echo "  Loading $dep..."
+        local result=$(send_cmd "load \"$dep\";")
+        if echo "$result" | grep -q "Exception\|Error"; then
+            echo "WARNING: Problem loading $dep: $result"
+        fi
+        dep_count=$((dep_count + 1))
+    done
+    echo "Loaded $dep_count dependencies."
+
+    # Extract lines 1 to line_num-1 from the script
+    if [ "$line_num" -gt 1 ]; then
+        echo "Executing script up to line $((line_num - 1))..."
+        local script_prefix=$(head -n $((line_num - 1)) "$script_file")
+
+        # Write to temp file and send
+        local tmpfile=$(mktemp)
+        echo "$script_prefix" > "$tmpfile"
+
+        local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
+        { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN"
+
+        # Use longer timeout for script execution
+        echo "Waiting for script execution (this may take a while)..."
+        wait_for_response "$prev_size" 6000  # 10 minute timeout
+        local result=$?
+
+        rm -f "$tmpfile"
+
+        if [ $result -ne 0 ]; then
+            echo "WARNING: Script execution may have timed out"
+        fi
+    fi
+
+    echo ""
+    echo "Session ready at line $line_num of $script_file"
+    echo "Use 'send' to interact with the session."
+}
+
 # Kill all HOL sessions - nuclear option for cleanup
 cleanup_all() {
     local count=0
@@ -263,8 +404,12 @@ case "$1" in
     cleanup)
         cleanup_all
         ;;
+    load-to)
+        shift
+        load_to "$1" "$2"
+        ;;
     *)
-        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup}"
+        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE}"
         echo ""
         echo "Commands operate on the HOL session for the current directory."
         echo "Use 'cleanup' to kill ALL sessions (nuclear option)."

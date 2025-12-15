@@ -12,16 +12,65 @@ This document describes how AI agents should use the `hol-agent-helper.sh` scrip
 | `./hol-agent-helper.sh stop` | Stop HOL session |
 | `./hol-agent-helper.sh status` | Check if HOL is running for current dir |
 | `./hol-agent-helper.sh status:DIR` | Check if HOL is running for DIR |
+| `./hol-agent-helper.sh log` | Show session log |
+| `./hol-agent-helper.sh load-to FILE LINE` | **Load script up to LINE (recommended)** |
+| `./hol-agent-helper.sh cleanup` | Kill ALL HOL sessions |
 
-## Setup
+## Recommended Workflow: Using `load-to`
 
-Before starting proofs, ensure HOL is running:
+When working on an existing HOL script file, **use `load-to` to set up your session**. This is much more reliable than manually loading dependencies and replaying tactics.
+
+### Step 1: Find the right line number
+
+The line number must be a **blank line** that follows a block ender (`End`, `QED`, or line ending with `;`).
+
+```bash
+# Find QED lines to identify theorem boundaries
+grep -n "^QED$" /path/to/script.sml
+
+# Look at lines around a specific location
+sed -n '1240,1250p' /path/to/script.sml
+```
+
+### Step 2: Load the script
+
+```bash
+~/hol-agents/hol-agent-helper.sh load-to /path/to/script.sml 1245
+```
+
+This automatically:
+- Discovers all dependencies using `holdeptool.exe`
+- Restarts HOL in the script's directory
+- Loads all dependencies
+- Executes the script up to (but not including) line 1245
+
+### Step 3: Verify and explore
+
+```bash
+# Check that definitions are available
+~/hol-agents/hol-agent-helper.sh send 'some_def;'
+
+# Now explore tactics interactively
+~/hol-agents/hol-agent-helper.sh send 'g `...`;'
+~/hol-agents/hol-agent-helper.sh send 'e(tactic);'
+```
+
+### Step 4: If session hangs or needs reset
+
+```bash
+# Just run load-to again - it handles stopping and restarting
+~/hol-agents/hol-agent-helper.sh load-to /path/to/script.sml 1245
+```
+
+## Alternative: Manual Setup
+
+If you need to start a fresh session without loading a script, use the basic commands:
 
 ```bash
 ./hol-agent-helper.sh start
 ```
 
-This starts a persistent HOL session. You only need to do this once per session.
+This starts a persistent HOL session. You then need to manually load dependencies.
 
 ## Sending Commands
 

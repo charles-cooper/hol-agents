@@ -52,6 +52,40 @@ echo 'g `!m:num. m + 0 = m`;' > .hol_cmd.sml
 ./hol-agent-helper.sh stop
 ```
 
+### Load a script up to a specific point (recommended for proof development)
+
+```bash
+./hol-agent-helper.sh load-to SCRIPT_FILE LINE_NUMBER
+```
+
+This command loads a HOL script file up to a specified line, automatically handling all dependencies. This is the **recommended way** to set up a session for interactive proof development on an existing script.
+
+**Requirements:**
+- `LINE_NUMBER` must point to a blank line in the script
+- The blank line should follow a "block ender" (`End`, `QED`, `Termination`, or a line ending with `;`)
+- The script should be buildable (compiles with Holmake, possibly with cheats)
+- Requires `holdeptool.exe` at `~/HOL/bin/holdeptool.exe`
+
+**What it does:**
+1. Validates the line is blank and follows a block ender
+2. Uses `holdeptool.exe` to discover all dependencies
+3. Restarts HOL session in the script's directory
+4. Loads all dependencies automatically
+5. Executes the script content up to (but not including) the target line
+
+**Example:**
+```bash
+# Find a good stopping point (blank line after QED)
+grep -n "^QED$" myScript.sml
+sed -n '240,250p' myScript.sml  # Check lines around QED
+
+# Load up to line 245 (a blank line after QED on line 244)
+./hol-agent-helper.sh load-to /path/to/myScript.sml 245
+
+# Now interact with the session - all prior definitions are available
+./hol-agent-helper.sh send 'my_previous_def;'
+```
+
 ## Example Proof Session
 
 ```bash
@@ -111,10 +145,13 @@ proofManagerLib.status();    (* show proof status *)
 
 ## Files
 
-- `/tmp/hol_agent_in` - Named pipe for sending commands
-- `/tmp/hol_agent.log` - Output log
-- `/tmp/hol_agent.pid` - PID file for the HOL process
-- `.hol_cmd.sml` - Temp file for commands (in script directory)
+Session files are stored per-directory in `/tmp/hol_sessions/<hash>/`:
+- `in` - Named pipe for sending commands
+- `log` - Output log
+- `pid` - PID file for the session
+- `workdir` - Working directory path
+
+The `<hash>` is derived from the working directory path, allowing multiple independent sessions.
 
 ## Agent Instructions
 
