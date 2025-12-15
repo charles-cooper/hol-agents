@@ -94,7 +94,8 @@ start_hol() {
     # - setsid creates new session so HOL isn't killed when parent exits
     # - fd redirections detach from parent's tty so script doesn't wait for HOL
     cd "$workdir"
-    setsid sh -c "tail -f '$fifo' | hol --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
+    local hol_bin="${HOLDIR:-$HOME/HOL}/bin/hol"
+    setsid sh -c "tail -f '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
     local pipeline_pid=$!
 
     echo "$pipeline_pid" > "$pidfile"
