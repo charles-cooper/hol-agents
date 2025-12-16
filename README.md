@@ -86,6 +86,67 @@ sed -n '240,250p' myScript.sml  # Check lines around QED
 ./hol-agent-helper.sh send 'my_previous_def;'
 ```
 
+### Navigating to a Cheat
+
+The `load-to` command can also navigate directly to a `cheat` within a proof:
+
+```bash
+# Navigate to a specific cheat (line 1439 contains "cheat")
+./hol-agent-helper.sh load-to /path/to/script.sml 1439
+```
+
+**Semantics based on target line content:**
+- **Blank line**: Load up to start of next top-level block (existing behavior)
+- **Line contains `cheat`**: Navigate into the proof to that cheat point
+- **Other**: Error
+
+**How cheat navigation works:**
+
+1. Finds the containing Theorem block (searches backwards for `Theorem`/`Triviality`)
+2. Loads script up to before the Theorem (using existing logic)
+3. Extracts goal text between `Theorem name:` and `Proof`, sends `g(`goal`)`
+4. Parses tactics from `Proof` to the cheat, handling THEN1 nesting
+5. Sends appropriate `e()` calls to reach the cheat point
+
+**Handling THEN1/`>-` nesting:**
+
+The challenge is that `>-` expects its argument to fully solve a subgoal. To stop *inside* a `>-` block, the execution must be split.
+
+A "THEN1 opener" is detected when a line ends with `>- (` (the opening paren of a subgoal block).
+
+- **Complete THEN1 block**: The matching `)` appears before the cheat line. Include in current `e()` call since it fully solves its subgoal.
+- **Incomplete THEN1 block**: The matching `)` is at or after the cheat line. Split here:
+  - Execute tactics up to (but not including) the `>- (` as one `e()` call
+  - Start a new chunk with the inner content (excluding the `>- (`)
+
+**Example:** For a proof with structure:
+```sml
+Proof
+  tac1 \\ tac2 \\ conj_tac      (* creates 2 subgoals *)
+  >- (                           (* incomplete: closes after cheat *)
+    IF_CASES_TAC                 (* creates 2 subgoals *)
+    >- (                         (* incomplete: closes after cheat *)
+      inner1 \\ inner2
+      \\ cheat)                  (* LINE 1439 *)
+    \\ other_case)
+  \\ second_conjunct
+QED
+```
+
+The navigation produces:
+```
+Chunk 1: tac1 \\ tac2 \\ conj_tac     →  e(tac1 \\ tac2 \\ conj_tac)
+Chunk 2: IF_CASES_TAC                  →  e(IF_CASES_TAC)
+Chunk 3: inner1 \\ inner2              →  e(inner1 \\ inner2)
+```
+
+After execution, the proof state is at the point just before `cheat`.
+
+**Current limitations:**
+- Only handles THEN1/`>-` nesting structure
+- Does not handle `by` or `suffices_by` nesting (errors if detected)
+- Requires the script to be buildable
+
 ## Example Proof Session
 
 ```bash

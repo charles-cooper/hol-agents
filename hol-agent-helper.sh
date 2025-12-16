@@ -205,6 +205,9 @@ log_hol() {
 
 # Load script up to a given line number
 # Usage: load_to SCRIPT_FILE LINE_NUMBER
+#
+# If LINE_NUMBER points to a blank line: loads up to start of next top-level block
+# If LINE_NUMBER points to a line containing 'cheat': navigates into the proof to that cheat
 load_to() {
     local script_file="$1"
     local line_num="$2"
@@ -236,13 +239,29 @@ load_to() {
         return 1
     fi
 
-    # Validate line is blank
+    # Check what's on the target line
     local target_line=$(sed -n "${line_num}p" "$script_file")
-    if [ -n "$(echo "$target_line" | tr -d '[:space:]')" ]; then
-        echo "ERROR: Line $line_num is not blank: '$target_line'"
-        echo "The load-to command requires a blank line at the cursor position."
+
+    # Determine mode: blank line or cheat line
+    if [ -z "$(echo "$target_line" | tr -d '[:space:]')" ]; then
+        # Blank line mode - existing behavior
+        load_to_blank "$script_file" "$line_num" "$script_dir"
+    elif echo "$target_line" | grep -q "cheat"; then
+        # Cheat mode - new behavior
+        load_to_cheat "$script_file" "$line_num" "$script_dir"
+    else
+        echo "ERROR: Line $line_num is neither blank nor contains 'cheat':"
+        echo "  '$target_line'"
+        echo "The load-to command requires either a blank line or a cheat line."
         return 1
     fi
+}
+
+# Load to a blank line (original behavior)
+load_to_blank() {
+    local script_file="$1"
+    local line_num="$2"
+    local script_dir="$3"
 
     # Find closest non-blank line above and validate it looks like a block ender
     local prev_line_num=$((line_num - 1))
@@ -266,6 +285,296 @@ load_to() {
             echo "Proceeding anyway..."
         fi
     fi
+
+    # Common setup: dependencies, session start, script prefix execution
+    load_to_common_setup "$script_file" "$line_num" "$script_dir"
+}
+
+# Load to a cheat line (new behavior)
+load_to_cheat() {
+    local script_file="$1"
+    local cheat_line="$2"
+    local script_dir="$3"
+
+    echo "Cheat detected at line $cheat_line. Navigating into proof..."
+
+    # Find the Theorem/Triviality block containing this cheat
+    local theorem_line=""
+    local theorem_name=""
+    local i=$cheat_line
+    while [ "$i" -ge 1 ]; do
+        local line=$(sed -n "${i}p" "$script_file")
+        if echo "$line" | grep -qE "^(Theorem|Triviality)[[:space:]]"; then
+            theorem_line=$i
+            # Extract theorem name (word after Theorem/Triviality, before colon or [)
+            theorem_name=$(echo "$line" | sed -E 's/^(Theorem|Triviality)[[:space:]]+([A-Za-z0-9_]+).*/\2/')
+            break
+        fi
+        i=$((i - 1))
+    done
+
+    if [ -z "$theorem_line" ]; then
+        echo "ERROR: Could not find Theorem/Triviality containing line $cheat_line"
+        return 1
+    fi
+    echo "Found theorem '$theorem_name' at line $theorem_line"
+
+    # Find the Proof line
+    local proof_line=""
+    i=$theorem_line
+    while [ "$i" -le "$cheat_line" ]; do
+        local line=$(sed -n "${i}p" "$script_file")
+        if echo "$line" | grep -qE "^Proof"; then
+            proof_line=$i
+            break
+        fi
+        i=$((i + 1))
+    done
+
+    if [ -z "$proof_line" ]; then
+        echo "ERROR: Could not find 'Proof' between theorem (line $theorem_line) and cheat (line $cheat_line)"
+        return 1
+    fi
+    echo "Found Proof at line $proof_line"
+
+    # Find a blank line before the theorem to use as load point
+    local load_line=$((theorem_line - 1))
+    while [ "$load_line" -ge 1 ]; do
+        local line=$(sed -n "${load_line}p" "$script_file")
+        if [ -z "$(echo "$line" | tr -d '[:space:]')" ]; then
+            break
+        fi
+        load_line=$((load_line - 1))
+    done
+
+    if [ "$load_line" -lt 1 ]; then
+        echo "ERROR: Could not find blank line before theorem"
+        return 1
+    fi
+
+    # Load up to before the theorem
+    echo "Loading script up to line $load_line (before theorem)..."
+    load_to_common_setup "$script_file" "$load_line" "$script_dir"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Extract goal text (between theorem declaration and Proof)
+    echo "Extracting goal..."
+    local goal_text=$(sed -n "$((theorem_line + 1)),$((proof_line - 1))p" "$script_file" | tr '\n' ' ')
+    # Also get any text after the colon on the theorem line itself
+    local theorem_line_text=$(sed -n "${theorem_line}p" "$script_file")
+    local after_colon=$(echo "$theorem_line_text" | sed 's/^[^:]*://')
+    if [ -n "$(echo "$after_colon" | tr -d '[:space:]')" ]; then
+        goal_text="$after_colon $goal_text"
+    fi
+
+    # Clean up goal text
+    goal_text=$(echo "$goal_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+    # Send goal
+    echo "Setting up goal..."
+    local tmpfile=$(mktemp --suffix=.sml)
+    echo "g \`$goal_text\`;" > "$tmpfile"
+    local result=$(send_file "$tmpfile")
+    rm -f "$tmpfile"
+    if echo "$result" | grep -qi "error\|exception"; then
+        echo "ERROR setting goal: $result"
+        return 1
+    fi
+
+    # Extract and parse tactics from Proof+1 to cheat_line-1
+    echo "Parsing tactics..."
+    parse_and_send_tactics "$script_file" "$((proof_line + 1))" "$((cheat_line - 1))" "$cheat_line"
+
+    echo ""
+    echo "Session ready at cheat on line $cheat_line of $script_file"
+    echo "Use 'send' to interact with the session."
+}
+
+# Parse tactics and send them, handling THEN1 nesting
+# Arguments: script_file start_line end_line cheat_line
+parse_and_send_tactics() {
+    local script_file="$1"
+    local start_line="$2"
+    local end_line="$3"
+    local cheat_line="$4"
+
+    # Read all tactic lines into a single string
+    local all_tactics=$(sed -n "${start_line},${end_line}p" "$script_file")
+
+    # Strategy: Find incomplete THEN1 blocks by tracking paren depth.
+    # A THEN1 opener is >- ( or THEN1 ( (with optional whitespace).
+    # A block is "complete" if its ( is matched by ) before end of text.
+    # A block is "incomplete" if we reach end of text with unmatched (.
+    # We only split at incomplete blocks.
+
+    # Use awk to find split points (character positions of incomplete >- ( or THEN1 ()
+    local split_info=$(echo "$all_tactics" | awk '
+    BEGIN {
+        depth = 0
+        in_then1 = 0
+        then1_start = -1
+        pos = 0
+        split_points = ""
+    }
+    {
+        line = $0
+        n = length(line)
+        for (i = 1; i <= n; i++) {
+            c = substr(line, i, 1)
+            pos++
+
+            # Check for >- pattern (look ahead for - after >)
+            if (c == ">" && i < n) {
+                rest = substr(line, i+1)
+                if (match(rest, /^[[:space:]]*-[[:space:]]*\(/)) {
+                    # Found >- (, record position before >
+                    then1_starts[depth] = pos - 1
+                    then1_depths[depth] = depth
+                    # Skip past the pattern to the (
+                    skip = RLENGTH
+                    i += skip
+                    pos += skip
+                    depth++
+                    continue
+                }
+            }
+
+            # Check for THEN1 pattern
+            if (c == "T" && substr(line, i, 5) == "THEN1") {
+                rest = substr(line, i+5)
+                if (match(rest, /^[[:space:]]*\(/)) {
+                    then1_starts[depth] = pos - 1
+                    then1_depths[depth] = depth
+                    skip = 4 + RLENGTH
+                    i += skip
+                    pos += skip
+                    depth++
+                    continue
+                }
+            }
+
+            if (c == "(") {
+                depth++
+            } else if (c == ")") {
+                depth--
+                # Check if this closes a THEN1 block
+                for (d in then1_depths) {
+                    if (then1_depths[d] == depth) {
+                        # This THEN1 block is now complete, remove from tracking
+                        delete then1_starts[d]
+                        delete then1_depths[d]
+                    }
+                }
+            }
+        }
+        pos++  # newline
+    }
+    END {
+        # Any remaining then1_starts are incomplete - output their positions
+        n = 0
+        for (d in then1_starts) {
+            if (n > 0) printf " "
+            printf "%d", then1_starts[d]
+            n++
+        }
+        if (n > 0) printf "\n"
+    }
+    ')
+
+    if [ -z "$split_info" ]; then
+        # No incomplete THEN1 blocks - send everything as one chunk
+        echo "No incomplete THEN1 blocks found, sending as single chunk..."
+        send_tactic_chunk "$all_tactics"
+        return
+    fi
+
+    echo "Found incomplete THEN1 blocks at positions: $split_info"
+
+    # Convert split points to sorted array
+    local -a splits
+    read -ra splits <<< "$split_info"
+    IFS=$'\n' splits=($(sort -n <<<"${splits[*]}")); unset IFS
+
+    # Build chunks based on split points
+    local prev_pos=0
+    local chunk_num=0
+    local all_len=${#all_tactics}
+
+    for split_pos in "${splits[@]}"; do
+        if [ "$split_pos" -gt "$prev_pos" ]; then
+            chunk_num=$((chunk_num + 1))
+            local chunk="${all_tactics:$prev_pos:$((split_pos - prev_pos))}"
+            echo "  Sending chunk $chunk_num (chars $prev_pos-$split_pos)..."
+            send_tactic_chunk "$chunk"
+        fi
+        # Skip past the >- ( or THEN1 ( to start next chunk after the (
+        # Find the ( after this position
+        local rest="${all_tactics:$split_pos}"
+        # Use grep to find the pattern and calculate offset
+        local pattern_match=$(echo "$rest" | grep -oP '^(>\s*-|THEN1)\s*\(' | head -1)
+        local paren_offset=${#pattern_match}
+        if [ "$paren_offset" -eq 0 ]; then
+            # Fallback: just skip a reasonable amount
+            paren_offset=4
+        fi
+        prev_pos=$((split_pos + paren_offset))
+    done
+
+    # Send final chunk
+    if [ "$prev_pos" -lt "$all_len" ]; then
+        chunk_num=$((chunk_num + 1))
+        local chunk="${all_tactics:$prev_pos}"
+        echo "  Sending final chunk $chunk_num..."
+        send_tactic_chunk "$chunk"
+    fi
+}
+
+# Helper: send a single tactic chunk
+send_tactic_chunk() {
+    local chunk="$1"
+
+    # Trim leading/trailing whitespace from the whole chunk
+    # but preserve internal structure including \\ operators
+    chunk=$(printf '%s' "$chunk" | sed -e '1s/^[[:space:]]*//' -e '$s/[[:space:]]*$//')
+
+    # If chunk starts with \\, remove just that leading \\
+    # (it would be a continuation from before a split point)
+    chunk=$(printf '%s' "$chunk" | sed '1s/^\\\\[[:space:]]*//')
+
+    # If chunk ends with \\, remove just that trailing \\
+    # (it would continue to an incomplete >- block we split at)
+    chunk=$(printf '%s' "$chunk" | sed '$s/[[:space:]]*\\\\[[:space:]]*$//')
+
+    # Check if anything remains
+    if [ -z "$(printf '%s' "$chunk" | tr -d '[:space:]')" ]; then
+        return
+    fi
+
+    local preview=$(printf '%s' "$chunk" | tr '\n' ' ' | cut -c1-60)
+    echo "    Content: $preview..."
+
+    local tmpfile=$(mktemp --suffix=.sml)
+    printf 'e (%s);\n' "$chunk" > "$tmpfile"
+
+    local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
+    { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN"
+    local result=$(wait_for_response "$prev_size" 1200)  # 2 min timeout per chunk
+
+    rm -f "$tmpfile"
+
+    if echo "$result" | grep -qi "error\|exception"; then
+        echo "WARNING: Error in tactic chunk:"
+        echo "$result" | head -10
+    fi
+}
+
+# Common setup for both blank and cheat modes
+load_to_common_setup() {
+    local script_file="$1"
+    local line_num="$2"
+    local script_dir="$3"
 
     # Get dependencies using holdeptool.exe
     echo "Getting dependencies with holdeptool.exe..."
@@ -343,6 +652,39 @@ load_to() {
     echo "Use 'send' to interact with the session."
 }
 
+# Send interrupt signal to HOL process
+# This can stop looping tactics without killing the session
+interrupt_hol() {
+    if [ ! -f "$PIDFILE" ]; then
+        echo "HOL not running in $(pwd)"
+        return 1
+    fi
+
+    local pipeline_pid=$(head -1 "$PIDFILE")
+
+    # Find the actual hol process (child of the pipeline)
+    # The pipeline is: tail -f | hol --zero
+    # We need to signal the hol process
+    local hol_pid=$(pgrep -P "$pipeline_pid" -f "hol" 2>/dev/null | head -1)
+
+    if [ -z "$hol_pid" ]; then
+        # Try finding hol in the session group
+        hol_pid=$(pgrep -s "$pipeline_pid" -f "hol --zero" 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$hol_pid" ]; then
+        echo "Sending SIGINT to HOL process (PID: $hol_pid)..."
+        kill -INT "$hol_pid" 2>/dev/null
+        sleep 0.5
+        echo "Interrupt sent. Check session with 'send' command."
+        return 0
+    else
+        echo "Could not find HOL process to interrupt"
+        echo "Pipeline PID: $pipeline_pid"
+        return 1
+    fi
+}
+
 # Kill all HOL sessions - nuclear option for cleanup
 cleanup_all() {
     local count=0
@@ -408,8 +750,11 @@ case "$1" in
         shift
         load_to "$1" "$2"
         ;;
+    interrupt)
+        interrupt_hol
+        ;;
     *)
-        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE}"
+        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE|interrupt}"
         echo ""
         echo "Commands operate on the HOL session for the current directory."
         echo "Use 'cleanup' to kill ALL sessions (nuclear option)."
