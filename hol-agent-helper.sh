@@ -343,6 +343,39 @@ load_to() {
     echo "Use 'send' to interact with the session."
 }
 
+# Send interrupt signal to HOL process
+# This can stop looping tactics without killing the session
+interrupt_hol() {
+    if [ ! -f "$PIDFILE" ]; then
+        echo "HOL not running in $(pwd)"
+        return 1
+    fi
+
+    local pipeline_pid=$(head -1 "$PIDFILE")
+
+    # Find the actual hol process (child of the pipeline)
+    # The pipeline is: tail -f | hol --zero
+    # We need to signal the hol process
+    local hol_pid=$(pgrep -P "$pipeline_pid" -f "hol" 2>/dev/null | head -1)
+
+    if [ -z "$hol_pid" ]; then
+        # Try finding hol in the session group
+        hol_pid=$(pgrep -s "$pipeline_pid" -f "hol --zero" 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$hol_pid" ]; then
+        echo "Sending SIGINT to HOL process (PID: $hol_pid)..."
+        kill -INT "$hol_pid" 2>/dev/null
+        sleep 0.5
+        echo "Interrupt sent. Check session with 'send' command."
+        return 0
+    else
+        echo "Could not find HOL process to interrupt"
+        echo "Pipeline PID: $pipeline_pid"
+        return 1
+    fi
+}
+
 # Kill all HOL sessions - nuclear option for cleanup
 cleanup_all() {
     local count=0
@@ -408,8 +441,11 @@ case "$1" in
         shift
         load_to "$1" "$2"
         ;;
+    interrupt)
+        interrupt_hol
+        ;;
     *)
-        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE}"
+        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE|interrupt}"
         echo ""
         echo "Commands operate on the HOL session for the current directory."
         echo "Use 'cleanup' to kill ALL sessions (nuclear option)."
