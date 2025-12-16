@@ -12,24 +12,37 @@
 #
 # Session isolation:
 #   Each working directory gets its own isolated HOL session. Sessions are stored
-#   in /tmp/hol_sessions/<hash>/ where <hash> is derived from the absolute path.
+#   in /tmp/hol_sessions/<hash>/ where <hash> is derived from the absolute path
+#   and optional session ID.
 #   This means:
 #   - Multiple projects can have independent HOL sessions
+#   - Multiple sessions in the same directory are supported via HOL_SESSION_ID
 #   - Sessions are automatically cleaned up on system reboot
 #   - All commands (send, stop, status, log) must be run from the same directory
 #     where 'start' was run (or a directory specified to 'start')
 #   - Running from subdirectories will NOT find the parent's session
+#
+# Multiple sessions in same directory:
+#   Set HOL_SESSION_ID environment variable to run multiple sessions:
+#     HOL_SESSION_ID=agent1 ./hol-agent-helper.sh start
+#     HOL_SESSION_ID=agent2 ./hol-agent-helper.sh start
+#   Each session ID creates an independent session in the same directory.
 #
 # If DIR contains a .hol_init.sml file, it will be loaded after HOL starts.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSIONS_DIR="/tmp/hol_sessions"
 
-# Compute session directory from working directory path
+# Compute session directory from working directory path and optional session ID
 # Uses first 16 chars of sha256 hash for brevity while avoiding collisions
+# If HOL_SESSION_ID is set, it's included in the hash to allow multiple sessions
 session_dir_for() {
     local workdir="$1"
-    local hash=$(echo -n "$workdir" | sha256sum | cut -c1-16)
+    local session_key="$workdir"
+    if [ -n "$HOL_SESSION_ID" ]; then
+        session_key="$workdir:$HOL_SESSION_ID"
+    fi
+    local hash=$(echo -n "$session_key" | sha256sum | cut -c1-16)
     echo "$SESSIONS_DIR/$hash"
 }
 
@@ -77,7 +90,9 @@ start_hol() {
     local workdir_file="$sess_dir/workdir"
 
     if [ -f "$pidfile" ] && kill -0 "$(head -1 "$pidfile")" 2>/dev/null; then
-        echo "HOL already running (PID: $(head -1 "$pidfile")) in $workdir"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "HOL already running (PID: $(head -1 "$pidfile")) in $workdir$session_msg"
         return 0
     fi
 
@@ -86,8 +101,9 @@ start_hol() {
     rm -f "$fifo"
     mkfifo "$fifo"
 
-    # Save working directory for status command
+    # Save working directory and session ID for status command
     echo "$workdir" > "$workdir_file"
+    echo "$HOL_SESSION_ID" > "$sess_dir/session_id"
 
     # Start HOL with --zero flag for null-byte framing
     # - tail -f keeps the FIFO open (otherwise first write closes HOL's stdin)
@@ -106,7 +122,9 @@ start_hol() {
     local elapsed=0
     while [ $elapsed -lt $timeout ]; do
         if [ "$(tail -c 1 "$log" 2>/dev/null | od -An -tx1 | tr -d ' ')" = "00" ]; then
-            echo "HOL ready (PID: $pipeline_pid) in $workdir"
+            local session_msg=""
+            [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+            echo "HOL ready (PID: $pipeline_pid) in $workdir$session_msg"
 
             # Load init file if present
             if [ -f "$workdir/.hol_init.sml" ]; then
@@ -135,7 +153,9 @@ send_cmd() {
     local cmd="$1"
 
     if [ ! -f "$PIDFILE" ]; then
-        echo "ERROR: HOL not running in $(pwd). Use: $0 start"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "ERROR: HOL not running in $(pwd)$session_msg. Use: $0 start"
         return 1
     fi
 
@@ -149,7 +169,9 @@ send_file() {
     local file="$1"
 
     if [ ! -f "$PIDFILE" ]; then
-        echo "ERROR: HOL not running in $(pwd). Use: $0 start"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "ERROR: HOL not running in $(pwd)$session_msg. Use: $0 start"
         return 1
     fi
 
@@ -165,11 +187,14 @@ send_file() {
 
 stop_hol() {
     if [ ! -f "$PIDFILE" ]; then
-        echo "HOL not running in $(pwd)"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "HOL not running in $(pwd)$session_msg"
         return 0
     fi
 
     local pid=$(head -1 "$PIDFILE")
+    local saved_session_id=$(cat "$SESSION_DIR/session_id" 2>/dev/null)
 
     # setsid creates a new session with session ID = pid
     # Kill entire session to clean up tail -f and hol
@@ -179,16 +204,23 @@ stop_hol() {
     kill -- -"$pid" 2>/dev/null
 
     rm -rf "$SESSION_DIR"
-    echo "HOL stopped"
+    local session_msg=""
+    [ -n "$saved_session_id" ] && session_msg=" [session: $saved_session_id]"
+    echo "HOL stopped$session_msg"
 }
 
 status_hol() {
     if [ -f "$PIDFILE" ] && kill -0 "$(head -1 "$PIDFILE")" 2>/dev/null; then
         local workdir=$(cat "$WORKDIR_FILE" 2>/dev/null || echo "unknown")
-        echo "HOL running (PID: $(head -1 "$PIDFILE")) in $workdir"
+        local saved_session_id=$(cat "$SESSION_DIR/session_id" 2>/dev/null)
+        local session_msg=""
+        [ -n "$saved_session_id" ] && session_msg=" [session: $saved_session_id]"
+        echo "HOL running (PID: $(head -1 "$PIDFILE")) in $workdir$session_msg"
         return 0
     else
-        echo "HOL not running in $(pwd)"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "HOL not running in $(pwd)$session_msg"
         # Clean up stale session if exists
         [ -d "$SESSION_DIR" ] && rm -rf "$SESSION_DIR"
         return 1
@@ -197,7 +229,9 @@ status_hol() {
 
 log_hol() {
     if [ ! -f "$LOG" ]; then
-        echo "No log file found for $(pwd)"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "No log file found for $(pwd)$session_msg"
         return 1
     fi
     tr '\0' '\n' < "$LOG"
@@ -656,7 +690,9 @@ load_to_common_setup() {
 # This can stop looping tactics without killing the session
 interrupt_hol() {
     if [ ! -f "$PIDFILE" ]; then
-        echo "HOL not running in $(pwd)"
+        local session_msg=""
+        [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
+        echo "HOL not running in $(pwd)$session_msg"
         return 1
     fi
 
@@ -757,6 +793,7 @@ case "$1" in
         echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE|interrupt}"
         echo ""
         echo "Commands operate on the HOL session for the current directory."
+        echo "Set HOL_SESSION_ID env var to run multiple sessions in the same directory."
         echo "Use 'cleanup' to kill ALL sessions (nuclear option)."
         exit 1
         ;;
