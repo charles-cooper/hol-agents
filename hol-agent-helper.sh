@@ -23,8 +23,8 @@
 #   - Running from subdirectories will NOT find the parent's session
 #
 # Multiple sessions in same directory:
-#   Set HOL_SESSION_ID environment variable to run multiple sessions:
-#     HOL_SESSION_ID=agent1 ./hol-agent-helper.sh start
+#   Use -s flag or HOL_SESSION_ID environment variable:
+#     ./hol-agent-helper.sh -s agent1 start
 #     HOL_SESSION_ID=agent2 ./hol-agent-helper.sh start
 #   Each session ID creates an independent session in the same directory.
 #
@@ -32,6 +32,12 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSIONS_DIR="/tmp/hol_sessions"
+
+# Parse -s flag for session ID (must come before command)
+if [ "$1" = "-s" ]; then
+    HOL_SESSION_ID="$2"
+    shift 2
+fi
 
 # Compute session directory from working directory path and optional session ID
 # Uses first 16 chars of sha256 hash for brevity while avoiding collisions
@@ -790,10 +796,10 @@ case "$1" in
         interrupt_hol
         ;;
     *)
-        echo "Usage: $0 {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE|interrupt}"
+        echo "Usage: $0 [-s SESSION_ID] {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE|interrupt}"
         echo ""
         echo "Commands operate on the HOL session for the current directory."
-        echo "Set HOL_SESSION_ID env var to run multiple sessions in the same directory."
+        echo "Use -s or HOL_SESSION_ID env var for multiple sessions in the same directory."
         echo "Use 'cleanup' to kill ALL sessions (nuclear option)."
         exit 1
         ;;

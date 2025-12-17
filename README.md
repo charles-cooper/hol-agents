@@ -217,26 +217,29 @@ The `<hash>` is derived from the working directory path (and optional session ID
 
 ## Multiple Sessions in Same Directory
 
-To run multiple concurrent HOL sessions in the same directory, set the `HOL_SESSION_ID` environment variable:
+To run multiple concurrent HOL sessions in the same directory, use the `-s` flag or `HOL_SESSION_ID` environment variable:
 
 ```bash
 # Start two independent sessions
-HOL_SESSION_ID=agent1 ./hol-agent-helper.sh start
-HOL_SESSION_ID=agent2 ./hol-agent-helper.sh start
+./hol-agent-helper.sh -s agent1 start
+./hol-agent-helper.sh -s agent2 start
 
 # Interact with specific sessions
-HOL_SESSION_ID=agent1 ./hol-agent-helper.sh send 'val x = 1;'
-HOL_SESSION_ID=agent2 ./hol-agent-helper.sh send 'val y = 2;'
+./hol-agent-helper.sh -s agent1 send 'val x = 1;'
+./hol-agent-helper.sh -s agent2 send 'val y = 2;'
 
 # Check status of each
-HOL_SESSION_ID=agent1 ./hol-agent-helper.sh status
-HOL_SESSION_ID=agent2 ./hol-agent-helper.sh status
+./hol-agent-helper.sh -s agent1 status
+./hol-agent-helper.sh -s agent2 status
 
 # Stop specific session
-HOL_SESSION_ID=agent1 ./hol-agent-helper.sh stop
+./hol-agent-helper.sh -s agent1 stop
+
+# Environment variable also works
+HOL_SESSION_ID=agent1 ./hol-agent-helper.sh status
 ```
 
-The session ID is hashed together with the directory path to create unique session directories. All commands (send, stop, status, log, etc.) must use the same `HOL_SESSION_ID` to target the correct session.
+The session ID is hashed together with the directory path to create unique session directories. All commands (send, stop, status, log, etc.) must use the same session ID to target the correct session.
 
 ## Agent Instructions
 
