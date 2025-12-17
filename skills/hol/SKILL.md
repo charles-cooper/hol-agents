@@ -14,8 +14,8 @@ Task NOT complete until: all cheats removed, build passes with no CHEAT warnings
 
 HOL backticks fail silently in shell. **Always use file method:**
 ```
-echo 'g `!x. P x`;' > .hol_cmd.sml
-.claude/skills/hol/scripts/hol-agent-helper.sh send:.hol_cmd.sml
+echo 'g `!x. P x`;' > .hol_cmd_${HOL_SESSION_ID:-default}.sml
+.claude/skills/hol/scripts/hol-agent-helper.sh send:.hol_cmd_${HOL_SESSION_ID:-default}.sml
 ```
 
 ## Helper Commands
@@ -42,7 +42,7 @@ Re-run load-to to reset. Handles `>-`/`THEN1` nesting.
 
 ## Files
 
-`.hol_cmd.sml` - commands to send | `.hol_init.sml` - auto-loaded on start | `.hol_test.sml` - scratch
+`.hol_cmd_${HOL_SESSION_ID:-default}.sml` - commands to send | `.hol_init.sml` - auto-loaded on start | `.hol_test.sml` - scratch
 Check `.hol_init.sml` before issuing commands to avoid duplicates.
 
 ## Goal Management

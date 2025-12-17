@@ -39,6 +39,12 @@ echo 'g `!m:num. m + 0 = m`;' > .hol_cmd.sml
 ./hol-agent-helper.sh send:.hol_cmd.sml
 ```
 
+When using multiple sessions, include the session ID in filenames to avoid conflicts:
+```bash
+echo 'g `!m:num. m + 0 = m`;' > .hol_cmd_${HOL_SESSION_ID}.sml
+./hol-agent-helper.sh -s $HOL_SESSION_ID send:.hol_cmd_${HOL_SESSION_ID}.sml
+```
+
 ### Check status
 
 ```bash
