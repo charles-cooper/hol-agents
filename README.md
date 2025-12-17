@@ -6,6 +6,29 @@ A simple shell script for AI agents to interactively develop proofs in HOL4, sim
 
 This tool provides a persistent HOL4 session that agents can interact with via simple shell commands. It enables the "send tactic, see goal, send next tactic" workflow essential for interactive theorem proving.
 
+## Installing as a Claude Code Skill
+
+To use this with [Claude Code](https://claude.com/claude-code), install the skill so Claude automatically knows how to use the helper script for HOL4 proof development. See the [Claude Code skills documentation](https://docs.anthropic.com/en/docs/claude-code/skills) for more details.
+
+**Option 1: Use the install script**
+```bash
+# From your HOL4 project directory (must have .claude/ initialized)
+/path/to/hol-agents/install-skill.sh
+```
+
+**Option 2: Manual symlink**
+```bash
+# Project-level (shared with team via git)
+mkdir -p .claude/skills
+ln -s /path/to/hol-agents/skills/hol .claude/skills/hol
+
+# Or personal (available in all projects)
+mkdir -p ~/.claude/skills
+ln -s /path/to/hol-agents/skills/hol ~/.claude/skills/hol
+```
+
+After installation, Claude will automatically use the skill when working with HOL4 proofs, .sml theorem files, or Holmake builds.
+
 ## Requirements
 
 - HOL4 installed and `hol` available in PATH
