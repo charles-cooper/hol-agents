@@ -11,8 +11,18 @@ Each working directory gets isolated session in `/tmp/hol_sessions/<hash>/`:
 - `log` - Output (null-byte delimited)
 - `pid` - Pipeline PID
 - `workdir` - Original directory path
+- `session_id` - Session ID (if `HOL_SESSION_ID` was set)
 
-Hash is first 16 chars of SHA256 of absolute path.
+Hash is first 16 chars of SHA256 of `path` or `path:session_id` if `HOL_SESSION_ID` is set.
+
+### Multiple Sessions (Same Directory)
+
+Set `HOL_SESSION_ID` env var to run concurrent sessions in the same directory:
+```bash
+HOL_SESSION_ID=agent1 ./hol-agent-helper.sh start
+HOL_SESSION_ID=agent2 ./hol-agent-helper.sh start
+```
+Each session ID hashes with the directory to create independent session dirs. All commands must use the same `HOL_SESSION_ID` to target the correct session.
 
 ### Null-Byte Framing
 

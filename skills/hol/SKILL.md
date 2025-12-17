@@ -32,6 +32,8 @@ stop             - end session
 ```
 Path: `.claude/skills/hol/scripts/hol-agent-helper.sh CMD`
 
+**Multiple sessions:** Set `HOL_SESSION_ID=name` env var for concurrent sessions in same directory.
+
 ## load-to Workflow
 
 **To blank line** (between theorems): loads deps, executes to LINE, interact via send.

@@ -211,8 +211,32 @@ Session files are stored per-directory in `/tmp/hol_sessions/<hash>/`:
 - `log` - Output log
 - `pid` - PID file for the session
 - `workdir` - Working directory path
+- `session_id` - Session ID (if `HOL_SESSION_ID` was set)
 
-The `<hash>` is derived from the working directory path, allowing multiple independent sessions.
+The `<hash>` is derived from the working directory path (and optional session ID), allowing multiple independent sessions.
+
+## Multiple Sessions in Same Directory
+
+To run multiple concurrent HOL sessions in the same directory, set the `HOL_SESSION_ID` environment variable:
+
+```bash
+# Start two independent sessions
+HOL_SESSION_ID=agent1 ./hol-agent-helper.sh start
+HOL_SESSION_ID=agent2 ./hol-agent-helper.sh start
+
+# Interact with specific sessions
+HOL_SESSION_ID=agent1 ./hol-agent-helper.sh send 'val x = 1;'
+HOL_SESSION_ID=agent2 ./hol-agent-helper.sh send 'val y = 2;'
+
+# Check status of each
+HOL_SESSION_ID=agent1 ./hol-agent-helper.sh status
+HOL_SESSION_ID=agent2 ./hol-agent-helper.sh status
+
+# Stop specific session
+HOL_SESSION_ID=agent1 ./hol-agent-helper.sh stop
+```
+
+The session ID is hashed together with the directory path to create unique session directories. All commands (send, stop, status, log, etc.) must use the same `HOL_SESSION_ID` to target the correct session.
 
 ## Agent Instructions
 
