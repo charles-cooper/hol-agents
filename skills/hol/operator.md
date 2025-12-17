@@ -13,7 +13,7 @@ You are the **operator**. Do NOT perform implementation work directly. Your role
 Use Task tool with `subagent_type=general-purpose`. Include in every prompt:
 
 ```
-Read .claude/skills/hol/itp.md for HOL4 tactics and hol-agent-helper.sh usage.
+Read skills/hol/itp.md for HOL4 tactics and hol-agent-helper.sh usage.
 
 PERFORMANCE CRITICAL:
 - If any tactic takes >15 seconds, abort and try different approach
@@ -43,8 +43,10 @@ For build tasks, tell subagent to read `holmake.md` instead.
 
 Each subagent MUST use unique session ID to avoid conflicts:
 ```bash
-.claude/skills/hol/scripts/hol-agent-helper.sh -s <unique_id> start
+skills/hol/scripts/hol-agent-helper.sh -s <unique_id> start
 ```
+
+Subagents must also use session-specific scratch files (e.g. `.hol_cmd_<session_id>.sml`) to avoid overwriting each other's command files.
 
 ## Completion Standard
 

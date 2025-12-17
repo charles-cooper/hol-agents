@@ -7,7 +7,7 @@ You are a **subagent** doing ITP work. Do NOT delegate - do the work yourself.
 HOL backticks fail silently in shell. **Always use file method:**
 ```
 echo 'g `!x. P x`;' > .hol_cmd_${HOL_SESSION_ID:-default}.sml
-.claude/skills/hol/scripts/hol-agent-helper.sh send:.hol_cmd_${HOL_SESSION_ID:-default}.sml
+skills/hol/scripts/hol-agent-helper.sh send:.hol_cmd_${HOL_SESSION_ID:-default}.sml
 ```
 
 ## Helper Commands
@@ -22,7 +22,7 @@ status           - check if running
 interrupt        - SIGINT (stop runaway tactic)
 stop             - end session
 ```
-Path: `.claude/skills/hol/scripts/hol-agent-helper.sh CMD`
+Path: `skills/hol/scripts/hol-agent-helper.sh CMD`
 
 **Session ID:** Always use `-s <id>` flag given in your prompt to avoid conflicts.
 
