@@ -1,6 +1,6 @@
 # HOL Agent Helper - Contributor Guide
 
-Tool for AI agents to interactively develop HOL4 proofs. See README_AGENTS.md for usage.
+Tool for AI agents to interactively develop HOL4 proofs. See SKILL.md for usage.
 
 ## Architecture
 
@@ -89,6 +89,6 @@ Allows multiple independent sessions. Path in dirname would have slash issues.
 ```
 hol-agent-helper.sh  -- Main script
 README.md            -- Human documentation
-README_AGENTS.md     -- Consumer agent documentation
+SKILL.md             -- Consumer agent documentation
 AGENTS.md            -- This file (contributor guide)
 ```
