@@ -112,12 +112,15 @@ start_hol() {
     echo "$HOL_SESSION_ID" > "$sess_dir/session_id"
 
     # Start HOL with --zero flag for null-byte framing
-    # - tail -f keeps the FIFO open (otherwise first write closes HOL's stdin)
+    # - We use cat to read from FIFO, with a background sleep keeping the FIFO open
+    #   (tail -f doesn't work reliably with FIFOs - it uses inotify which doesn't trigger)
     # - setsid creates new session so HOL isn't killed when parent exits
     # - fd redirections detach from parent's tty so script doesn't wait for HOL
     cd "$workdir"
     local hol_bin="${HOLDIR:-$HOME/HOL}/bin/hol"
-    setsid sh -c "tail -f '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
+    # sleep infinity keeps write end of FIFO open so cat doesn't see EOF after first command
+    # cat reads from FIFO reliably (unlike tail -f which has inotify issues with FIFOs)
+    setsid sh -c "sleep infinity > '$fifo' & cat '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
     local pipeline_pid=$!
 
     echo "$pipeline_pid" > "$pidfile"
@@ -736,9 +739,9 @@ cleanup_all() {
         count=$((count + 1))
     fi
 
-    # Kill any orphaned tail -f processes for our FIFOs
-    if pkill -f "tail -f /tmp/hol_sessions/.*/in" 2>/dev/null; then
-        echo "Killed tail processes"
+    # Kill any orphaned cat processes reading from our FIFOs
+    if pkill -f "cat /tmp/hol_sessions/.*/in" 2>/dev/null; then
+        echo "Killed cat processes"
         count=$((count + 1))
     fi
 
