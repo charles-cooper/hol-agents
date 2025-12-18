@@ -112,12 +112,15 @@ start_hol() {
     echo "$HOL_SESSION_ID" > "$sess_dir/session_id"
 
     # Start HOL with --zero flag for null-byte framing
-    # - tail -f keeps the FIFO open (otherwise first write closes HOL's stdin)
+    # - We use cat to read from FIFO, with a background sleep keeping the FIFO open
+    #   (tail -f doesn't work reliably with FIFOs - it uses inotify which doesn't trigger)
     # - setsid creates new session so HOL isn't killed when parent exits
     # - fd redirections detach from parent's tty so script doesn't wait for HOL
     cd "$workdir"
     local hol_bin="${HOLDIR:-$HOME/HOL}/bin/hol"
-    setsid sh -c "tail -f '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
+    # sleep infinity keeps write end of FIFO open so cat doesn't see EOF after first command
+    # cat reads from FIFO reliably (unlike tail -f which has inotify issues with FIFOs)
+    setsid sh -c "sleep infinity > '$fifo' & cat '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
     local pipeline_pid=$!
 
     echo "$pipeline_pid" > "$pidfile"
@@ -665,21 +668,26 @@ load_to_common_setup() {
 
     # Extract lines 1 to line_num-1 from the script
     if [ "$line_num" -gt 1 ]; then
-        echo "Executing script up to line $((line_num - 1))..."
-        local script_prefix=$(head -n $((line_num - 1)) "$script_file")
-
-        # Write to temp file and send
+        # Write directly to temp file (avoids shell variable size limits)
         local tmpfile=$(mktemp)
-        echo "$script_prefix" > "$tmpfile"
+        head -n $((line_num - 1)) "$script_file" > "$tmpfile"
+        local file_size=$(stat -c%s "$tmpfile")
+        echo "Executing script up to line $((line_num - 1)) ($file_size bytes)..."
 
         local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
-        { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN"
+
+        # Write in background to avoid blocking on FIFO buffer (64KB default)
+        # HOL consumes gradually as it executes, so large writes would block
+        { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN" &
+        local write_pid=$!
 
         # Use longer timeout for script execution
         echo "Waiting for script execution (this may take a while)..."
         wait_for_response "$prev_size" 6000  # 10 minute timeout
         local result=$?
 
+        # Clean up background write (should be done, but just in case)
+        wait $write_pid 2>/dev/null
         rm -f "$tmpfile"
 
         if [ $result -ne 0 ]; then
@@ -737,9 +745,9 @@ cleanup_all() {
         count=$((count + 1))
     fi
 
-    # Kill any orphaned tail -f processes for our FIFOs
-    if pkill -f "tail -f /tmp/hol_sessions/.*/in" 2>/dev/null; then
-        echo "Killed tail processes"
+    # Kill any orphaned cat processes reading from our FIFOs
+    if pkill -f "cat /tmp/hol_sessions/.*/in" 2>/dev/null; then
+        echo "Killed cat processes"
         count=$((count + 1))
     fi
 
