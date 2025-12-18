@@ -666,11 +666,10 @@ load_to_common_setup() {
     # Extract lines 1 to line_num-1 from the script
     if [ "$line_num" -gt 1 ]; then
         echo "Executing script up to line $((line_num - 1))..."
-        local script_prefix=$(head -n $((line_num - 1)) "$script_file")
 
-        # Write to temp file and send
+        # Write directly to temp file (avoids shell variable size limits)
         local tmpfile=$(mktemp)
-        echo "$script_prefix" > "$tmpfile"
+        head -n $((line_num - 1)) "$script_file" > "$tmpfile"
 
         local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
         { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN"
