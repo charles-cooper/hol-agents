@@ -668,20 +668,26 @@ load_to_common_setup() {
 
     # Extract lines 1 to line_num-1 from the script
     if [ "$line_num" -gt 1 ]; then
-        echo "Executing script up to line $((line_num - 1))..."
-
         # Write directly to temp file (avoids shell variable size limits)
         local tmpfile=$(mktemp)
         head -n $((line_num - 1)) "$script_file" > "$tmpfile"
+        local file_size=$(stat -c%s "$tmpfile")
+        echo "Executing script up to line $((line_num - 1)) ($file_size bytes)..."
 
         local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
-        { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN"
+
+        # Write in background to avoid blocking on FIFO buffer (64KB default)
+        # HOL consumes gradually as it executes, so large writes would block
+        { cat "$tmpfile"; printf '\0'; } > "$FIFO_IN" &
+        local write_pid=$!
 
         # Use longer timeout for script execution
         echo "Waiting for script execution (this may take a while)..."
         wait_for_response "$prev_size" 6000  # 10 minute timeout
         local result=$?
 
+        # Clean up background write (should be done, but just in case)
+        wait $write_pid 2>/dev/null
         rm -f "$tmpfile"
 
         if [ $result -ne 0 ]; then
