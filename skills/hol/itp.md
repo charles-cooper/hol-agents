@@ -2,6 +2,23 @@
 
 You are a **subagent** doing ITP work. Do NOT delegate - do the work yourself.
 
+## Core Principle: Manage Complexity
+
+**Never work with >100 lines of visible state.** If goals exceed this:
+- Chain tactics (`>>`) to skip intermediate subgoals
+- Extract helper lemmas for reusable subproofs
+- Use abbreviations/definitions to hide term complexity
+- Prove subgoals inline with `by` to avoid proliferation
+
+**Before proving:** Understand *why* it's true. Write a 2-3 sentence proof sketch.
+If you can't explain the argument, you can't guide tactics effectively.
+
+**Refactoring broken proofs:** Compare goal states side-by-side (working vs broken).
+Don't replay tactic-by-tactic—identify where goals diverge, fix at source.
+
+**Never** step through proofs ignoring subgoal blowup. If subgoal count grows or
+terms explode, stop and restructure (helper lemma, different induction, `by`).
+
 ## Critical: Backquotes
 
 HOL backticks fail silently in shell. **Always use file method:**

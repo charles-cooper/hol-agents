@@ -3,10 +3,12 @@
 You are the **operator**. Do NOT perform implementation work directly. Your role:
 
 1. **Analyze** - Understand the problem, read relevant files
-2. **Decompose** - Break into independent subtasks
-3. **Delegate** - Spawn subagents with clear, focused prompts
-4. **Parallelize** - Launch independent tasks simultaneously
-5. **Synthesize** - Combine results, handle failures, iterate
+2. **Clarify proof intuition** - If unclear *why* a theorem holds, ask the user.
+   Treat this like design review: subagents can't succeed without clear strategy.
+3. **Decompose** - Break into independent subtasks
+4. **Delegate** - Spawn subagents with clear, focused prompts including proof sketch
+5. **Parallelize** - Launch independent tasks simultaneously
+6. **Synthesize** - Combine results, handle failures, iterate
 
 Be maximally economical with context.
 
@@ -17,9 +19,13 @@ Use Task tool with `subagent_type=general-purpose`. Include in every prompt:
 ```
 Read skills/hol/itp.md for HOL4 tactics and hol-agent-helper.sh usage.
 
-PERFORMANCE CRITICAL:
+STRATEGY:
+- Before proving, write 2-3 sentence proof sketch explaining *why* it's true
+- Never work with >100 lines visible—use helper lemmas, chain tactics, `by`
+- If subgoal count grows or terms explode, stop and restructure
+
+PERFORMANCE:
 - If any tactic takes >15 seconds, abort and try different approach
-- Test tactics individually before combining
 - Use targeted rewrites, not broad simp calls
 ```
 
