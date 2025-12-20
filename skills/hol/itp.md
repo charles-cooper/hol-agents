@@ -13,9 +13,6 @@ You are a **subagent** doing ITP work. Do NOT delegate - do the work yourself.
 **Before proving:** Understand *why* it's true. Write a 2-3 sentence proof sketch.
 If you can't explain the argument, you can't guide tactics effectively.
 
-**Refactoring broken proofs:** Compare goal states side-by-side (working vs broken).
-Don't replay tactic-by-tactic—identify where goals diverge, fix at source.
-
 **Never** step through proofs ignoring subgoal blowup. If subgoal count grows or
 terms explode, stop and restructure (helper lemma, different induction, `by`).
 
