@@ -135,14 +135,22 @@ start_hol() {
             [ -n "$HOL_SESSION_ID" ] && session_msg=" [session: $HOL_SESSION_ID]"
             echo "HOL ready (PID: $pipeline_pid) in $workdir$session_msg"
 
-            # Load init file if present
+            # Temporarily update globals for send_file
+            SESSION_DIR="$sess_dir"
+            FIFO_IN="$fifo"
+            LOG="$log"
+            PIDFILE="$pidfile"
+
+            # Load etq (goaltree helper) from skills directory
+            local etq_file="$SCRIPT_DIR/etq.sml"
+            if [ -f "$etq_file" ]; then
+                echo "Loading etq.sml..."
+                send_file "$etq_file"
+            fi
+
+            # Load project init file if present
             if [ -f "$workdir/.hol_init.sml" ]; then
                 echo "Loading $workdir/.hol_init.sml..."
-                # Temporarily update globals for send_file
-                SESSION_DIR="$sess_dir"
-                FIFO_IN="$fifo"
-                LOG="$log"
-                PIDFILE="$pidfile"
                 send_file "$workdir/.hol_init.sml"
             fi
 

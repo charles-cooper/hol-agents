@@ -52,13 +52,17 @@ Re-run load-to to reset. Handles `>-`/`THEN1` nesting.
 
 ## Interactive Proof: Goaltree Mode
 
-**Always use goaltree mode** (`gt`/`et`) instead of goalstack (`g`/`e`). Goaltree records
+**Always use goaltree mode** (`gt`/`etq`) instead of goalstack (`g`/`e`). Goaltree records
 your tactics so you can extract the proof script when done.
+
+`etq` ("evaluate tactic quoted") takes a tactic as a string, compiles it at runtime,
+and records both the string and tactic in the proof tree. This lets `p()` show you
+the exact proof script to paste into your file.
 
 | Command | Purpose |
 |---------|---------|
 | `gt \`tm\`` | Start proof (goaltree mode) |
-| `et ("tac", tac)` | Apply tactic with name |
+| `etq "tac"` | Apply tactic (auto-records name) |
 | `p()` | Show proof tree with tactic names |
 | `b()` / `backup()` | Undo last tactic |
 | `top_goals()` | List remaining goals |
@@ -67,10 +71,10 @@ your tactics so you can extract the proof script when done.
 **Example session:**
 ```sml
 gt `A /\ B ==> B /\ A`;
-et ("strip_tac", strip_tac);
-et ("conj_tac", conj_tac);
-et ("simp[]", simp[]);
-et ("simp[]", simp[]);
+etq "strip_tac";
+etq "conj_tac";
+etq "simp[]";
+etq "simp[]";
 p();  (* Shows: strip_tac \\ conj_tac >- (simp[]) >- (simp[]) *)
 ```
 
