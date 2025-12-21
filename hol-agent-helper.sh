@@ -421,8 +421,8 @@ load_to_cheat() {
     echo "g \`$goal_text\`;" > "$tmpfile"
     local result=$(send_file "$tmpfile")
     rm -f "$tmpfile"
-    if echo "$result" | grep -qi "error\|exception"; then
-        echo "ERROR setting goal: $result"
+    if ! echo "$result" | grep -q "Initial goal:"; then
+        echo "ERROR setting goal - no goal established: $result"
         return 1
     fi
 
