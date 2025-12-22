@@ -8,7 +8,8 @@
 #   ./hol-agent-helper.sh stop         - Stop HOL session for current directory
 #   ./hol-agent-helper.sh status       - Check if HOL is running for current directory
 #   ./hol-agent-helper.sh log          - Show session log
-#   ./hol-agent-helper.sh cleanup      - Kill ALL HOL sessions (nuclear option)
+#   ./hol-agent-helper.sh reap         - Kill stale sessions and old build processes
+#   ./hol-agent-helper.sh nuke         - Kill ALL HOL-related processes (nuclear option)
 #
 # Session isolation:
 #   Each working directory gets its own isolated HOL session. Sessions are stored
@@ -32,6 +33,11 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSIONS_DIR="/tmp/hol_sessions"
+
+# Reaping timeouts (can be overridden via environment variables)
+REAP_INACTIVE_TIMEOUT=${REAP_INACTIVE_TIMEOUT:-7200}   # 2h in seconds
+REAP_MAX_AGE=${REAP_MAX_AGE:-28800}                    # 8h in seconds
+REAP_BUILD_TIMEOUT=${REAP_BUILD_TIMEOUT:-7200}        # 2h in seconds
 
 # Parse -s flag for session ID (must come before command)
 if [ "$1" = "-s" ]; then
@@ -124,6 +130,8 @@ start_hol() {
     local pipeline_pid=$!
 
     echo "$pipeline_pid" > "$pidfile"
+    date +%s > "$sess_dir/created"
+    date +%s > "$sess_dir/activity"
 
     # Wait for HOL to initialize (look for null byte in log)
     echo "Waiting for HOL to initialize..."
@@ -177,6 +185,7 @@ send_cmd() {
     fi
 
     local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
+    date +%s > "$SESSION_DIR/activity"
     printf '%s\0' "$cmd" > "$FIFO_IN"
     wait_for_response "$prev_size"
 }
@@ -198,6 +207,7 @@ send_file() {
     fi
 
     local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
+    date +%s > "$SESSION_DIR/activity"
     { cat "$file"; printf '\0'; } > "$FIFO_IN"
     wait_for_response "$prev_size"
 }
@@ -743,35 +753,207 @@ interrupt_hol() {
     fi
 }
 
-# Kill all HOL sessions - nuclear option for cleanup
-cleanup_all() {
-    local count=0
+# Reap stale HOL sessions
+# Args: verbose (true/false)
+# Returns: count via global REAP_COUNT
+reap_stale_sessions() {
+    local verbose="${1:-false}"
+    REAP_COUNT=0
 
-    # Kill all hol --zero processes
-    if pkill -f "hol --zero" 2>/dev/null; then
-        echo "Killed hol processes"
-        count=$((count + 1))
-    fi
+    for sess in "$SESSIONS_DIR"/*/; do
+        [ -d "$sess" ] || continue
+        [ -f "$sess/pid" ] || continue
 
-    # Kill any orphaned cat processes reading from our FIFOs
-    if pkill -f "cat /tmp/hol_sessions/.*/in" 2>/dev/null; then
-        echo "Killed cat processes"
-        count=$((count + 1))
-    fi
+        local pid=$(cat "$sess/pid")
+        local workdir=$(cat "$sess/workdir" 2>/dev/null || echo "unknown")
+        local sess_id=$(cat "$sess/session_id" 2>/dev/null)
+        local hash=$(basename "$sess" | cut -c1-8)
+        local label="$workdir"
+        [ -n "$sess_id" ] && label="$label:$sess_id"
+        label="$label ($hash)"
 
-    # Remove all session directories
-    if [ -d "$SESSIONS_DIR" ]; then
-        local sessions=$(ls -1 "$SESSIONS_DIR" 2>/dev/null | wc -l)
-        rm -rf "$SESSIONS_DIR"
-        echo "Removed $sessions session(s)"
-    fi
+        # Already dead? Clean up directory
+        if ! kill -0 "$pid" 2>/dev/null; then
+            [ "$verbose" = "true" ] && echo "  Cleaned up: $label (dead)"
+            rm -rf "$sess"
+            continue
+        fi
 
-    if [ $count -eq 0 ]; then
-        echo "No HOL sessions found"
+        local now=$(date +%s)
+        local activity=$(cat "$sess/activity" 2>/dev/null || stat -c%Y "$sess/pid" 2>/dev/null || echo "$now")
+        local created=$(cat "$sess/created" 2>/dev/null || stat -c%Y "$sess/pid" 2>/dev/null || echo "$now")
+        local inactive=$((now - activity))
+        local age=$((now - created))
+
+        # Kill if: inactive > REAP_INACTIVE_TIMEOUT OR age > REAP_MAX_AGE
+        if [ "$inactive" -gt "$REAP_INACTIVE_TIMEOUT" ] || [ "$age" -gt "$REAP_MAX_AGE" ]; then
+            [ "$verbose" = "true" ] && echo "  Killed: $label (inactive $((inactive/60))m, age $((age/60))m)"
+            pkill -s "$pid" 2>/dev/null
+            kill -- -"$pid" 2>/dev/null
+            rm -rf "$sess"
+            REAP_COUNT=$((REAP_COUNT + 1))
+        else
+            [ "$verbose" = "true" ] && echo "  Kept: $label (inactive $((inactive/60))m, age $((age/60))m)"
+        fi
+    done
+}
+
+# Reap old build processes (holmake, buildheap older than 2h)
+# Args: verbose (true/false)
+# Returns: count via global REAP_BUILD_COUNT
+reap_old_builds() {
+    local verbose="${1:-false}"
+    REAP_BUILD_COUNT=0
+
+    while read -r pid etime cmd; do
+        [ -z "$pid" ] && continue
+        if echo "$cmd" | grep -qE 'holmake|buildheap' && ! echo "$cmd" | grep -qE 'grep|awk'; then
+            local shortcmd=$(echo "$cmd" | cut -c1-40)
+            if [ "$etime" -gt "$REAP_BUILD_TIMEOUT" ]; then
+                [ "$verbose" = "true" ] && echo "  Killed: PID $pid (age $((etime/60))m) - $shortcmd"
+                kill "$pid" 2>/dev/null
+                REAP_BUILD_COUNT=$((REAP_BUILD_COUNT + 1))
+            else
+                [ "$verbose" = "true" ] && echo "  Kept: PID $pid (age $((etime/60))m) - $shortcmd"
+            fi
+        fi
+    done < <(ps -eo pid,etimes,cmd 2>/dev/null | tail -n +2)
+}
+
+# Reap command - verbose selective cleanup
+reap_cmd() {
+    echo "Reaping stale HOL sessions..."
+    reap_stale_sessions true
+
+    echo "Reaping old build processes..."
+    reap_old_builds true
+
+    local total=$((REAP_COUNT + REAP_BUILD_COUNT))
+    if [ "$total" -eq 0 ]; then
+        echo "Nothing to reap."
     else
-        echo "Cleanup complete"
+        echo "Reaped $total process(es)."
     fi
 }
+
+# Nuke - nuclear option, kill everything HOL-related
+nuke_cmd() {
+    local force=false
+    [ "$1" = "--force" ] || [ "$1" = "-f" ] && force=true
+
+    # Count HOL sessions from our tracking
+    local hol_count=0
+    local hol_pids=""
+    for sess in "$SESSIONS_DIR"/*/; do
+        [ -f "$sess/pid" ] || continue
+        local pid=$(cat "$sess/pid")
+        if kill -0 "$pid" 2>/dev/null; then
+            hol_pids="$hol_pids $pid"
+            hol_count=$((hol_count + 1))
+        fi
+    done
+
+    # Count holmake processes (match binary path to avoid grep false positives)
+    local holmake_pids=$(pgrep -f 'bin/holmake' 2>/dev/null || true)
+    local holmake_count=0
+    [ -n "$holmake_pids" ] && holmake_count=$(echo "$holmake_pids" | wc -l)
+
+    # Count standalone buildheap (not part of our sessions)
+    # Our sessions spawn buildheap as a child process
+    local buildheap_pids=""
+    local buildheap_count=0
+    for pid in $(pgrep -f 'bin/buildheap' 2>/dev/null || true); do
+        # Check if this buildheap's parent is one of our session PIDs
+        local ppid=$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ')
+        local is_session_child=false
+        for sess_pid in $hol_pids; do
+            [ "$ppid" = "$sess_pid" ] && is_session_child=true && break
+        done
+        if [ "$is_session_child" = "false" ]; then
+            buildheap_pids="$buildheap_pids $pid"
+            buildheap_count=$((buildheap_count + 1))
+        fi
+    done
+
+    local total=$((hol_count + holmake_count + buildheap_count))
+
+    if [ "$total" -eq 0 ]; then
+        echo "Nothing to kill."
+        # Still clean up any stale session directories
+        rm -rf "$SESSIONS_DIR"/* 2>/dev/null
+        return 0
+    fi
+
+    # Build detailed info for preview/kill
+    local details=""
+    for pid in $hol_pids; do
+        local workdir=""
+        local sess_id=""
+        local hash=""
+        for sess in "$SESSIONS_DIR"/*/; do
+            if [ -f "$sess/pid" ] && [ "$(cat "$sess/pid")" = "$pid" ]; then
+                workdir=$(cat "$sess/workdir" 2>/dev/null)
+                sess_id=$(cat "$sess/session_id" 2>/dev/null)
+                hash=$(basename "$sess" | cut -c1-8)
+                break
+            fi
+        done
+        local label="${workdir:-unknown}"
+        [ -n "$sess_id" ] && label="$label:$sess_id"
+        [ -n "$hash" ] && label="$label ($hash)"
+        details="$details  HOL session PID $pid - $label\n"
+    done
+    for pid in $holmake_pids; do
+        local cmd=$(ps -p "$pid" -o args= 2>/dev/null | cut -c1-60)
+        details="$details  holmake PID $pid${cmd:+ - $cmd}\n"
+    done
+    for pid in $buildheap_pids; do
+        local cmd=$(ps -p "$pid" -o args= 2>/dev/null | cut -c1-60)
+        details="$details  buildheap PID $pid${cmd:+ - $cmd}\n"
+    done
+
+    if [ "$force" != "true" ]; then
+        echo "This will kill:"
+        printf "$details"
+        printf "Continue? [y/N] "
+        read -r answer
+        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+            echo "Aborted."
+            return 1
+        fi
+        echo "Nuking..."
+    else
+        echo "Nuking:"
+        printf "$details"
+    fi
+
+    # Kill HOL sessions (use process group kill)
+    for pid in $hol_pids; do
+        pkill -s "$pid" 2>/dev/null
+        kill -- -"$pid" 2>/dev/null
+    done
+
+    # Kill holmake
+    for pid in $holmake_pids; do
+        kill "$pid" 2>/dev/null
+    done
+
+    # Kill buildheap
+    for pid in $buildheap_pids; do
+        kill "$pid" 2>/dev/null
+    done
+
+    # Remove all session directories
+    rm -rf "$SESSIONS_DIR"/* 2>/dev/null
+
+    echo "Nuked $total process(es)."
+}
+
+# Auto-reap stale sessions at script entry (silent)
+# Skip if running explicit reap/nuke command (they handle it themselves)
+if [ "$1" != "reap" ] && [ "$1" != "nuke" ]; then
+    reap_stale_sessions false >/dev/null
+fi
 
 case "$1" in
     start)
@@ -801,8 +983,12 @@ case "$1" in
     log)
         log_hol
         ;;
-    cleanup)
-        cleanup_all
+    reap)
+        reap_cmd
+        ;;
+    nuke)
+        shift
+        nuke_cmd "$1"
         ;;
     load-to)
         shift
@@ -812,11 +998,20 @@ case "$1" in
         interrupt_hol
         ;;
     *)
-        echo "Usage: $0 [-s SESSION_ID] {start [DIR]|send CMD|send:FILE|stop|status|log|cleanup|load-to FILE LINE|interrupt}"
+        echo "Usage: $0 [-s SESSION_ID] {start [DIR]|send CMD|send:FILE|stop|status|log|reap|nuke|load-to FILE LINE|interrupt}"
         echo ""
         echo "Commands operate on the HOL session for the current directory."
         echo "Use -s or HOL_SESSION_ID env var for multiple sessions in the same directory."
-        echo "Use 'cleanup' to kill ALL sessions (nuclear option)."
+        echo ""
+        echo "Cleanup commands:"
+        echo "  reap         - Kill stale sessions (inactive >2h) and old builds (>2h)"
+        echo "  nuke         - Kill ALL HOL-related processes (prompts for confirmation)"
+        echo "  nuke --force - Kill ALL without prompting"
+        echo ""
+        echo "Reap timeouts (override via environment variables):"
+        echo "  REAP_INACTIVE_TIMEOUT  - Session inactive timeout in seconds (default: 7200 = 2h)"
+        echo "  REAP_MAX_AGE           - Session max age in seconds (default: 28800 = 8h)"
+        echo "  REAP_BUILD_TIMEOUT     - Build process timeout in seconds (default: 7200 = 2h)"
         exit 1
         ;;
 esac
