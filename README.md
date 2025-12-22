@@ -81,6 +81,27 @@ echo 'g `!m:num. m + 0 = m`;' > .hol_cmd_${HOL_SESSION_ID}.sml
 ./hol-agent-helper.sh stop
 ```
 
+### Maintenance commands
+
+For cleaning up stale or runaway processes:
+
+```bash
+./hol-agent-helper.sh reap          # Kill stale sessions + old builds
+./hol-agent-helper.sh nuke          # Kill ALL HOL processes (prompts y/n)
+./hol-agent-helper.sh nuke --force  # Kill ALL without prompt
+```
+
+**reap** kills:
+- HOL sessions inactive >2h or older than 8h total
+- holmake/buildheap processes running >2h
+
+**nuke** kills:
+- All tracked HOL sessions
+- All holmake processes
+- All standalone buildheap processes
+
+Timeouts are configurable via `REAP_INACTIVE_TIMEOUT`, `REAP_MAX_AGE`, `REAP_BUILD_TIMEOUT` environment variables (in seconds).
+
 ### Load a script up to a specific point (recommended for proof development)
 
 ```bash
