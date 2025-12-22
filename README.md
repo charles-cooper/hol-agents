@@ -93,11 +93,11 @@ For cleaning up stale or runaway processes:
 
 **reap** kills:
 - HOL sessions inactive >2h or older than 8h total
-- holmake/buildheap processes running >2h
+- Holmake/buildheap processes running >2h
 
 **nuke** kills:
 - All tracked HOL sessions
-- All holmake processes
+- All Holmake processes
 - All standalone buildheap processes
 
 Timeouts are configurable via `REAP_INACTIVE_TIMEOUT`, `REAP_MAX_AGE`, `REAP_BUILD_TIMEOUT` environment variables (in seconds).

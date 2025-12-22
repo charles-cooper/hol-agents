@@ -807,7 +807,7 @@ reap_old_builds() {
 
     while read -r pid etime cmd; do
         [ -z "$pid" ] && continue
-        if echo "$cmd" | grep -qE 'holmake|buildheap' && ! echo "$cmd" | grep -qE 'grep|awk'; then
+        if echo "$cmd" | grep -qE 'Holmake|buildheap' && ! echo "$cmd" | grep -qE 'grep|awk'; then
             local shortcmd=$(echo "$cmd" | cut -c1-40)
             if [ "$etime" -gt "$REAP_BUILD_TIMEOUT" ]; then
                 [ "$verbose" = "true" ] && echo "  Killed: PID $pid (age $((etime/60))m) - $shortcmd"
@@ -854,7 +854,7 @@ nuke_cmd() {
     done
 
     # Count holmake processes (match binary path to avoid grep false positives)
-    local holmake_pids=$(pgrep -f 'bin/holmake' 2>/dev/null || true)
+    local holmake_pids=$(pgrep -f 'bin/Holmake' 2>/dev/null || true)
     local holmake_count=0
     [ -n "$holmake_pids" ] && holmake_count=$(echo "$holmake_pids" | wc -l)
 
