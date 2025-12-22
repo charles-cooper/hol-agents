@@ -12,6 +12,8 @@ Each working directory gets isolated session in `/tmp/hol_sessions/<hash>/`:
 - `pid` - Pipeline PID
 - `workdir` - Original directory path
 - `session_id` - Session ID (if `HOL_SESSION_ID` was set)
+- `created` - Unix timestamp when session started
+- `activity` - Unix timestamp of last command (for reaping)
 
 Hash is first 16 chars of SHA256 of `path` or `path:session_id` if `HOL_SESSION_ID` is set.
 
@@ -93,14 +95,16 @@ Allows multiple independent sessions. Path in dirname would have slash issues.
 
 # Cleanup
 ./hol-agent-helper.sh stop
-./hol-agent-helper.sh cleanup  # if needed
+./hol-agent-helper.sh reap      # kill stale sessions (>2h inactive) and old builds
+./hol-agent-helper.sh nuke      # kill ALL HOL processes (prompts, --force to skip)
 ```
 
 ## Files
 
 ```
-hol-agent-helper.sh  -- Main script
-README.md            -- Human documentation
-SKILL.md             -- Consumer agent documentation
-AGENTS.md            -- This file (contributor guide)
+hol-agent-helper.sh      -- Main script
+tests/test-reaping.sh    -- Tests for reap/nuke functionality
+README.md                -- Human documentation
+SKILL.md                 -- Consumer agent documentation
+AGENTS.md                -- This file (contributor guide)
 ```
