@@ -34,6 +34,11 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSIONS_DIR="/tmp/hol_sessions"
 
+# Reaping timeouts (can be overridden via environment variables)
+REAP_INACTIVE_TIMEOUT=${REAP_INACTIVE_TIMEOUT:-7200}   # 2h in seconds
+REAP_MAX_AGE=${REAP_MAX_AGE:-28800}                    # 8h in seconds
+REAP_BUILD_TIMEOUT=${REAP_BUILD_TIMEOUT:-7200}        # 2h in seconds
+
 # Parse -s flag for session ID (must come before command)
 if [ "$1" = "-s" ]; then
     HOL_SESSION_ID="$2"
@@ -780,8 +785,8 @@ reap_stale_sessions() {
         local inactive=$((now - activity))
         local age=$((now - created))
 
-        # Kill if: inactive >2h (7200s) OR age >8h (28800s)
-        if [ "$inactive" -gt 7200 ] || [ "$age" -gt 28800 ]; then
+        # Kill if: inactive > REAP_INACTIVE_TIMEOUT OR age > REAP_MAX_AGE
+        if [ "$inactive" -gt "$REAP_INACTIVE_TIMEOUT" ] || [ "$age" -gt "$REAP_MAX_AGE" ]; then
             [ "$verbose" = "true" ] && echo "  Killed: $label (inactive $((inactive/60))m, age $((age/60))m)"
             pkill -s "$pid" 2>/dev/null
             kill -- -"$pid" 2>/dev/null
@@ -804,7 +809,7 @@ reap_old_builds() {
         [ -z "$pid" ] && continue
         if echo "$cmd" | grep -qE 'holmake|buildheap' && ! echo "$cmd" | grep -qE 'grep|awk'; then
             local shortcmd=$(echo "$cmd" | cut -c1-40)
-            if [ "$etime" -gt 7200 ]; then
+            if [ "$etime" -gt "$REAP_BUILD_TIMEOUT" ]; then
                 [ "$verbose" = "true" ] && echo "  Killed: PID $pid (age $((etime/60))m) - $shortcmd"
                 kill "$pid" 2>/dev/null
                 REAP_BUILD_COUNT=$((REAP_BUILD_COUNT + 1))
@@ -945,7 +950,10 @@ nuke_cmd() {
 }
 
 # Auto-reap stale sessions at script entry (silent)
-reap_stale_sessions false >/dev/null
+# Skip if running explicit reap/nuke command (they handle it themselves)
+if [ "$1" != "reap" ] && [ "$1" != "nuke" ]; then
+    reap_stale_sessions false >/dev/null
+fi
 
 case "$1" in
     start)
@@ -999,6 +1007,11 @@ case "$1" in
         echo "  reap         - Kill stale sessions (inactive >2h) and old builds (>2h)"
         echo "  nuke         - Kill ALL HOL-related processes (prompts for confirmation)"
         echo "  nuke --force - Kill ALL without prompting"
+        echo ""
+        echo "Reap timeouts (override via environment variables):"
+        echo "  REAP_INACTIVE_TIMEOUT  - Session inactive timeout in seconds (default: 7200 = 2h)"
+        echo "  REAP_MAX_AGE           - Session max age in seconds (default: 28800 = 8h)"
+        echo "  REAP_BUILD_TIMEOUT     - Build process timeout in seconds (default: 7200 = 2h)"
         exit 1
         ;;
 esac
