@@ -81,6 +81,14 @@ echo 'g `!m:num. m + 0 = m`;' > .hol_cmd_${HOL_SESSION_ID}.sml
 ./hol-agent-helper.sh stop
 ```
 
+### Interrupt a runaway tactic
+
+```bash
+./hol-agent-helper.sh interrupt
+```
+
+Sends SIGINT to the HOL process without killing the session. Useful when a tactic loops or takes too long. The session remains usable - check with `send` command afterward.
+
 ### Maintenance commands
 
 For cleaning up stale or runaway processes:

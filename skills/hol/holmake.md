@@ -43,6 +43,18 @@ tail -100 <theory_dir>/.hol/logs/<TheoryName>
 cd <theory_dir> && Holmake cleanAll && Holmake
 ```
 
+## Long-Running Builds
+
+If build takes >2 minutes, kill YOUR running Holmake command (the Bash tool supports this).
+Do NOT background the task or spawn separate kill commands.
+
+Common causes of slow builds:
+- `metis_tac` on large search space
+- Unbounded `simp[]` or `fs[]` on recursive definitions
+- Type inference on complex polymorphic terms
+
+After killing, check the log to identify which proof is slow, then fix interactively.
+
 ## Completion Standard
 
 Build passes with NO:

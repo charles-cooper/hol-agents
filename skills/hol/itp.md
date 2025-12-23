@@ -132,6 +132,7 @@ prove(``A /\ B ==> B /\ A``, strip_tac \\ conj_tac >- simp[] >- simp[]);
 
 ## Performance
 
-- If tactic takes >15 seconds, abort and try different approach
+- If tactic takes >15 seconds, send SIGINT via `interrupt` command - do NOT background the task
+- After interrupt, session is still usable - try a different approach
 - Test tactics individually before combining
 - Use targeted rewrites, not broad simp calls

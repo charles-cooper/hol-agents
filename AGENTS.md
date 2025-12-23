@@ -93,6 +93,9 @@ Allows multiple independent sessions. Path in dirname would have slash issues.
 # Test cheat navigation
 ./hol-agent-helper.sh load-to /path/to/script.sml CHEAT_LINE
 
+# Interrupt a runaway tactic
+./hol-agent-helper.sh interrupt
+
 # Cleanup
 ./hol-agent-helper.sh stop
 ./hol-agent-helper.sh reap      # kill stale sessions (>2h inactive) and old builds
