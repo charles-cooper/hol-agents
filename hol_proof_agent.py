@@ -22,7 +22,7 @@ Implement an autonomous agent using the Claude Agent SDK (claude-agent-sdk) that
 
 4. CONTEXT MANAGEMENT (handoff every N messages)
    - Count AssistantMessage instances
-   - After max_agent_messages (default 40), trigger handoff:
+   - After max_agent_messages (default 100), trigger handoff:
      a) Ask Claude to commit progress if substantial
      b) Ask Claude to run p() and include proof state
      c) Ask Claude to update task file with ## Handoff section
@@ -54,7 +54,7 @@ Implement an autonomous agent using the Claude Agent SDK (claude-agent-sdk) that
    - --prompt/-p: Initial prompt
    - --fresh: Clear state file (but keep handoff)
    - --model/-m: Model to use
-   - --max-messages: Messages before handoff (default 40)
+   - --max-messages: Messages before handoff (default 100)
 
 9. SYSTEM PROMPT
    - Include CLAUDE.md content
@@ -87,7 +87,7 @@ class AgentConfig:
     claude_md: str
     model: str = "claude-opus-4-20250514"
     max_consecutive_errors: int = 5
-    max_agent_messages: int = 40  # Clear context after this many agent messages
+    max_agent_messages: int = 100 # Clear context after this many agent messages
 
 
 def read_file(path: str) -> str:
@@ -490,7 +490,7 @@ def main():
     parser.add_argument("--prompt", "-p", help="Initial prompt")
     parser.add_argument("--fresh", action="store_true", help="Ignore saved session")
     parser.add_argument("--model", "-m", default="claude-opus-4-20250514", help="Model to use")
-    parser.add_argument("--max-messages", type=int, default=40, help="Agent messages before handoff (default: 40)")
+    parser.add_argument("--max-messages", type=int, default=100, help="Agent messages before handoff (default: 100)")
 
     args = parser.parse_args()
 
