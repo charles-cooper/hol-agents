@@ -90,6 +90,20 @@ wait_for_response() {
     return 1
 }
 
+# Get PID of HOL REPL process (buildheap) for current session
+# Prints PID to stdout, returns 1 if not found
+get_hol_pid() {
+    local session_leader=$(head -1 "$PIDFILE" 2>/dev/null)
+    [ -z "$session_leader" ] && return 1
+    pgrep -s "$session_leader" -f "buildheap" 2>/dev/null | head -1
+}
+
+# Forward SIGINT to HOL process (silent version for traps)
+forward_interrupt() {
+    local hol_pid=$(get_hol_pid)
+    [ -n "$hol_pid" ] && kill -INT "$hol_pid" 2>/dev/null
+}
+
 start_hol() {
     local workdir="${1:-.}"
     workdir="$(cd "$workdir" && pwd)"
@@ -126,8 +140,21 @@ start_hol() {
     local hol_bin="${HOLDIR:-$HOME/HOL}/bin/hol"
     # sleep infinity keeps write end of FIFO open so cat doesn't see EOF after first command
     # cat reads from FIFO reliably (unlike tail -f which has inotify issues with FIFOs)
-    setsid sh -c "sleep infinity > '$fifo' & cat '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
-    local pipeline_pid=$!
+    # We write the session leader PID to a file so interrupt can find the hol process
+    setsid sh -c "echo \$\$ > '$sess_dir/leader_pid'; sleep infinity > '$fifo' & cat '$fifo' | '$hol_bin' --zero > '$log' 2>&1" </dev/null >/dev/null 2>&1 &
+
+    # Wait for leader_pid file to be written
+    local wait_count=0
+    while [ ! -s "$sess_dir/leader_pid" ] && [ $wait_count -lt 20 ]; do
+        sleep 0.05
+        wait_count=$((wait_count + 1))
+    done
+    if [ ! -s "$sess_dir/leader_pid" ]; then
+        echo "Failed to get session leader PID"
+        rm -rf "$sess_dir"
+        return 1
+    fi
+    local pipeline_pid=$(cat "$sess_dir/leader_pid")
 
     echo "$pipeline_pid" > "$pidfile"
     date +%s > "$sess_dir/created"
@@ -184,10 +211,12 @@ send_cmd() {
         return 1
     fi
 
+    trap 'forward_interrupt; exit 130' INT TERM HUP QUIT
     local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
     date +%s > "$SESSION_DIR/activity"
     printf '%s\0' "$cmd" > "$FIFO_IN"
     wait_for_response "$prev_size"
+    trap - INT TERM HUP QUIT
 }
 
 # Send command via temp file (avoids shell escaping issues)
@@ -206,10 +235,12 @@ send_file() {
         return 1
     fi
 
+    trap 'forward_interrupt; exit 130' INT TERM HUP QUIT
     local prev_size=$(stat -c%s "$LOG" 2>/dev/null || echo 0)
     date +%s > "$SESSION_DIR/activity"
     { cat "$file"; printf '\0'; } > "$FIFO_IN"
     wait_for_response "$prev_size"
+    trap - INT TERM HUP QUIT
 }
 
 stop_hol() {
@@ -728,17 +759,7 @@ interrupt_hol() {
         return 1
     fi
 
-    local pipeline_pid=$(head -1 "$PIDFILE")
-
-    # Find the actual hol process (child of the pipeline)
-    # The pipeline is: tail -f | hol --zero
-    # We need to signal the hol process
-    local hol_pid=$(pgrep -P "$pipeline_pid" -f "hol" 2>/dev/null | head -1)
-
-    if [ -z "$hol_pid" ]; then
-        # Try finding hol in the session group
-        hol_pid=$(pgrep -s "$pipeline_pid" -f "hol --zero" 2>/dev/null | head -1)
-    fi
+    local hol_pid=$(get_hol_pid)
 
     if [ -n "$hol_pid" ]; then
         echo "Sending SIGINT to HOL process (PID: $hol_pid)..."
@@ -748,7 +769,6 @@ interrupt_hol() {
         return 0
     else
         echo "Could not find HOL process to interrupt"
-        echo "Pipeline PID: $pipeline_pid"
         return 1
     fi
 }
