@@ -214,12 +214,11 @@ Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
 ## Critical Rules
 
 1. NEVER GIVE UP - keep trying different approaches forever
-2. After EVERY hol-agent-helper.sh send, run log to see output
-3. If stuck on one approach for 10+ attempts, try a completely different strategy
-4. Helper lemmas are your friend - break big proofs into smaller ones that fit in context
-5. `gvs[AllCaseEqs()]` can be too aggressive - sometimes `fs[]` or `simp[]` is better
-6. For induction, make sure IH is applicable (check variable names)
-7. If tactic runs >15 seconds, interrupt and try a different approach
+2. If stuck on one approach for 10+ attempts, try a completely different strategy
+3. Helper lemmas are your friend - break big proofs into smaller ones that fit in context
+4. `gvs[AllCaseEqs()]` can be too aggressive - sometimes `fs[]` or `simp[]` is better
+5. For induction, make sure IH is applicable (check variable names)
+6. If tactic runs >15 seconds, interrupt and try a different approach
 
 ## Recovery
 
