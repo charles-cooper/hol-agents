@@ -361,6 +361,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     if new_session_id and session_id != new_session_id:
                         session_id = new_session_id
                         print(f"[SESSION] Got ID: {session_id}")
+                        # Save immediately so we can resume if interrupted
+                        with open(state_path, 'w') as f:
+                            json.dump({"session_id": session_id, "message_count": message_count}, f)
 
                     # Count assistant messages
                     if msg_type == "AssistantMessage":
