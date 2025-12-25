@@ -344,7 +344,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     prompt = initial_prompt or f"Continue. Task file: {config.task_file}"
                 else:
                     # Fresh start or after handoff (handoff is in task file's ## Handoff section)
-                    prompt = initial_prompt or f"Begin. Read the task file at {config.task_file} and check for any ## Handoff section from previous sessions."
+                    prompt = initial_prompt or f"Begin. First run hol-agent-helper.sh status and p() if running. Then read {config.task_file} for ## Handoff section."
 
                 await client.query(prompt)
 
