@@ -225,7 +225,7 @@ If context seems lost:
 3. If session running, send `p();` and check log
 4. Run Holmake to see what's failing
 
-BEGIN NOW. Run Holmake first to assess state.
+BEGIN NOW.
 """
 
 
@@ -334,7 +334,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     prompt = "Continue."
                 else:
                     # Fresh start or after handoff (handoff is in task file's ## Handoff section)
-                    prompt = initial_prompt or "Begin. Check the task file for any ## Handoff section from previous sessions, then run Holmake to assess current state."
+                    prompt = initial_prompt or "Begin. Check the task file for any ## Handoff section from previous sessions."
 
                 await client.query(prompt)
 
