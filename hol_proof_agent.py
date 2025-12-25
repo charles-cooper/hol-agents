@@ -16,7 +16,7 @@ Implement an autonomous agent using the Claude Agent SDK (claude-agent-sdk) that
    - Deny all other Bash commands (return PermissionResultDeny)
 
 3. SESSION MANAGEMENT
-   - Save session_id to .agent_state.json for resume (like `claude -r`)
+   - Save session_id to .claude/agent_state.json for resume (like `claude -r`)
    - On restart, load session_id and pass to ClaudeAgentOptions(resume=session_id)
    - Track total_messages across sessions
 
@@ -88,6 +88,10 @@ class AgentConfig:
     model: str = "claude-opus-4-20250514"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 100 # Clear context after this many agent messages
+
+    @property
+    def state_path(self) -> str:
+        return os.path.join(self.working_dir, ".claude", "agent_state.json")
 
 
 def read_file(path: str) -> str:
@@ -294,9 +298,8 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
     error_count = 0
     message_count = 0
     session_id = None
-    state_dir = os.path.join(config.working_dir, ".claude")
-    os.makedirs(state_dir, exist_ok=True)
-    state_path = os.path.join(state_dir, "agent_state.json")
+    state_path = config.state_path
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
 
     # Load previous state if exists
     session_message_count = 0
@@ -522,9 +525,8 @@ def main():
     )
 
     # Clear state (but not handoff) if fresh start requested
-    state_file = os.path.join(working_dir, ".claude", "agent_state.json")
-    if args.fresh and os.path.exists(state_file):
-        os.remove(state_file)
+    if args.fresh and os.path.exists(config.state_path):
+        os.remove(config.state_path)
 
     print("=" * 60)
     print("HOL4 Proof Agent (Claude Agent SDK)")
