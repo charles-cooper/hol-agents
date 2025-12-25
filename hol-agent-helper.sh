@@ -90,12 +90,17 @@ wait_for_response() {
     return 1
 }
 
+# Get PID of HOL REPL process (buildheap) for current session
+# Prints PID to stdout, returns 1 if not found
+get_hol_pid() {
+    local session_leader=$(head -1 "$PIDFILE" 2>/dev/null)
+    [ -z "$session_leader" ] && return 1
+    pgrep -s "$session_leader" -f "buildheap" 2>/dev/null | head -1
+}
+
 # Forward SIGINT to HOL process (silent version for traps)
 forward_interrupt() {
-    local session_leader=$(head -1 "$PIDFILE" 2>/dev/null)
-    [ -z "$session_leader" ] && return
-    # Match buildheap specifically (the actual HOL REPL) to avoid matching the shell wrapper
-    local hol_pid=$(pgrep -s "$session_leader" -f "buildheap" 2>/dev/null | head -1)
+    local hol_pid=$(get_hol_pid)
     [ -n "$hol_pid" ] && kill -INT "$hol_pid" 2>/dev/null
 }
 
@@ -754,11 +759,7 @@ interrupt_hol() {
         return 1
     fi
 
-    local session_leader=$(head -1 "$PIDFILE")
-
-    # Find buildheap process in the session group (this is the actual HOL REPL)
-    # We match buildheap specifically to avoid matching the shell wrapper
-    local hol_pid=$(pgrep -s "$session_leader" -f "buildheap" 2>/dev/null | head -1)
+    local hol_pid=$(get_hol_pid)
 
     if [ -n "$hol_pid" ]; then
         echo "Sending SIGINT to HOL process (PID: $hol_pid)..."
@@ -768,7 +769,6 @@ interrupt_hol() {
         return 0
     else
         echo "Could not find HOL process to interrupt"
-        echo "Session leader: $session_leader"
         return 1
     fi
 }
