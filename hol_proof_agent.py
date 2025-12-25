@@ -176,7 +176,7 @@ Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
 
 | Command | Purpose |
 |---------|---------|
-| `gt \`tm\`` | Start proof (goaltree mode) |
+| `gt `tm`` | Start proof (goaltree mode) |
 | `etq "tac"` | Apply tactic (records as string for extraction) |
 | `p()` | Show proof tree - copy directly to Theorem block |
 | `b()` / `backup()` | Undo last tactic |
@@ -191,7 +191,7 @@ Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
 
 ## Theorem Search
 
-`DB.find "name"` | `DB.match [] \`\`pat\`\`` | `DB.theorems "thy"`
+`DB.find "name"` | `DB.match [] ``pat``` | `DB.theorems "thy"`
 
 ## Workflow
 
@@ -199,7 +199,7 @@ Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
 2. **Identify**: Find theorems with CHEAT warnings
 3. **Debug interactively**:
    - Start HOL session
-   - Write goal to .hol_cmd.sml: `gt \`goal\`;`
+   - Write goal to .hol_cmd.sml: `gt `goal`;`
    - Send it: `~/hol-agents/hol-agent-helper.sh send:.hol_cmd.sml`
    - Check log: `~/hol-agents/hol-agent-helper.sh log`
    - Try tactics via etq: `etq "tactic";`
