@@ -114,6 +114,7 @@ def build_system_prompt(config: AgentConfig) -> str:
 - Extract helper lemmas - smaller proofs fit in context better
 - Use `by` to prove subgoals inline and avoid proliferation
 - Prefer multiple small lemmas over one giant proof
+- Try to keep files between 100-500 loc
 
 **Before proving:** Understand *why* it's true. Write a 2-3 sentence proof sketch.
 If you can't explain the argument, you can't guide tactics effectively.
