@@ -294,7 +294,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
     error_count = 0
     message_count = 0
     session_id = None
-    state_path = os.path.join(config.working_dir, ".agent_state.json")
+    state_dir = os.path.join(config.working_dir, ".claude")
+    os.makedirs(state_dir, exist_ok=True)
+    state_path = os.path.join(state_dir, "agent_state.json")
 
     # Load previous state if exists
     session_message_count = 0
@@ -520,7 +522,7 @@ def main():
     )
 
     # Clear state (but not handoff) if fresh start requested
-    state_file = os.path.join(working_dir, ".agent_state.json")
+    state_file = os.path.join(working_dir, ".claude", "agent_state.json")
     if args.fresh and os.path.exists(state_file):
         os.remove(state_file)
 
