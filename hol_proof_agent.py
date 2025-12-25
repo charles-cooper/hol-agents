@@ -297,21 +297,23 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
     state_path = os.path.join(config.working_dir, ".agent_state.json")
 
     # Load previous state if exists
+    session_message_count = 0
     if os.path.exists(state_path):
         try:
             with open(state_path) as f:
                 state = json.load(f)
                 session_id = state.get("session_id")
                 message_count = state.get("message_count", 0)
+                session_message_count = state.get("session_message_count", 0)
                 if session_id:
-                    print(f"[RESUME] Found session {session_id} ({message_count} messages)")
+                    print(f"[RESUME] Found session {session_id} ({session_message_count}/{config.max_agent_messages} in session, {message_count} total)")
         except:
             pass
 
     print(f"[AGENT] Starting (handoff every {config.max_agent_messages} agent messages)...")
 
     while True:
-        session_message_count = 0
+        # session_message_count preserved from state file or previous iteration
         print(f"\n{'='*60}")
         if session_id:
             print(f"[SESSION] Resuming {session_id}")
@@ -346,7 +348,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     session_id = client.session_id
                     print(f"[SESSION] Got ID from client: {session_id}")
                     with open(state_path, 'w') as f:
-                        json.dump({"session_id": session_id, "message_count": message_count}, f)
+                        json.dump({"session_id": session_id, "message_count": message_count, "session_message_count": session_message_count}, f)
 
                 # Process messages until we hit the limit
                 async for message in client.receive_messages():
@@ -364,7 +366,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         print(f"[SESSION] Got ID: {session_id}")
                         # Save immediately so we can resume if interrupted
                         with open(state_path, 'w') as f:
-                            json.dump({"session_id": session_id, "message_count": message_count}, f)
+                            json.dump({"session_id": session_id, "message_count": message_count, "session_message_count": session_message_count}, f)
 
                     # Count assistant messages
                     if msg_type == "AssistantMessage":
@@ -373,7 +375,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         print(f"[MSG {session_message_count}/{config.max_agent_messages}] (total: {message_count})")
                         # Save state after each message
                         with open(state_path, 'w') as f:
-                            json.dump({"session_id": session_id, "message_count": message_count}, f)
+                            json.dump({"session_id": session_id, "message_count": message_count, "session_message_count": session_message_count}, f)
 
                     # Log content and check for completion
                     texts = print_message_blocks(message)
@@ -415,8 +417,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                         # Clear session_id to force new session after handoff
                         session_id = None
+                        session_message_count = 0
                         with open(state_path, 'w') as f:
-                            json.dump({"session_id": None, "message_count": message_count}, f)
+                            json.dump({"session_id": None, "message_count": message_count, "session_message_count": 0}, f)
                         print(f"[HANDOFF] Cleared session, {message_count} total messages")
 
                         print("[HANDOFF] Breaking out of session...")
@@ -435,7 +438,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
         except KeyboardInterrupt:
             # Save state immediately on interrupt
             with open(state_path, 'w') as f:
-                json.dump({"session_id": session_id, "message_count": message_count}, f)
+                json.dump({"session_id": session_id, "message_count": message_count, "session_message_count": session_message_count}, f)
             print(f"\n[INTERRUPT] State saved (session {session_id or 'None'}, {message_count} messages)")
             print("  Enter message to send to Claude")
             print("  'q' or Ctrl+C again to quit")
