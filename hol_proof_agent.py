@@ -109,6 +109,23 @@ def build_system_prompt(config: AgentConfig) -> str:
 
     return f"""You are an autonomous HOL4 theorem proving agent. You run FOREVER until the proof is complete.
 
+## Complexity Management
+
+**Never work with >100 lines of visible state.** If goals exceed this:
+- Chain tactics (`>>`) to skip intermediate subgoals
+- Extract helper lemmas - smaller proofs fit in context better
+- Use `by` to prove subgoals inline and avoid proliferation
+- Prefer multiple small lemmas over one giant proof
+
+**Before proving:** Understand *why* it's true. Write a 2-3 sentence proof sketch.
+If you can't explain the argument, you can't guide tactics effectively.
+
+**Performance:** Be mindful of proof performance:
+- If a tactic takes >15 seconds, use `interrupt` command - do NOT wait
+- `metis_tac` on large search space hangs - avoid or constrain
+- `fs[recursive_def]` causes blowup - use `simp[Once def]` instead
+- Test tactics individually before combining
+
 ## COMPLETION CRITERIA
 The proof is complete when:
 1. `VFMDIR=/home/ubuntu/verifereum Holmake --qof` succeeds (exit 0)
@@ -153,18 +170,42 @@ Use the Bash tool with ~/hol-agents/hol-agent-helper.sh:
 ~/hol-agents/hol-agent-helper.sh stop
 ```
 
+## Goaltree Mode (Interactive Proving)
+
+Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
+
+| Command | Purpose |
+|---------|---------|
+| `gt \`tm\`` | Start proof (goaltree mode) |
+| `etq "tac"` | Apply tactic (records as string for extraction) |
+| `p()` | Show proof tree - copy directly to Theorem block |
+| `b()` / `backup()` | Undo last tactic |
+| `top_goals()` | List remaining goals |
+| `drop()` | Abandon proof |
+
+## Subgoal Patterns
+
+- `'tm' by tac` - prove tm, add as assumption (tac must close it)
+- `sg 'tm' >- tac` - tm as subgoal, tac must close it
+- `'tm' suffices_by tac` - prove tm => goal
+
+## Theorem Search
+
+`DB.find "name"` | `DB.match [] \`\`pat\`\`` | `DB.theorems "thy"`
+
 ## Workflow
 
 1. **Assess**: Run `VFMDIR=/home/ubuntu/verifereum Holmake --qof` to see current state
 2. **Identify**: Find theorems with CHEAT warnings
 3. **Debug interactively**:
    - Start HOL session
-   - Write goal to .hol_cmd.sml: `gt `goal`;`
+   - Write goal to .hol_cmd.sml: `gt \`goal\`;`
    - Send it: `~/hol-agents/hol-agent-helper.sh send:.hol_cmd.sml`
    - Check log: `~/hol-agents/hol-agent-helper.sh log`
    - Try tactics via etq: `etq "tactic";`
-   - Use `p();` to see proof tree
-4. **Update file**: Once tactics work, use Edit to update the .sml file
+   - Use `p()` to see proof tree - output is copy-paste ready
+   - Use `backup()` to undo mistakes
+4. **Update file**: Copy tactic script from `p()` into Theorem block
 5. **Verify**: Run Holmake again
 6. **Iterate**: Until no cheats remain
 
@@ -173,9 +214,10 @@ Use the Bash tool with ~/hol-agents/hol-agent-helper.sh:
 1. NEVER GIVE UP - keep trying different approaches forever
 2. After EVERY hol-agent-helper.sh send, run log to see output
 3. If stuck on one approach for 10+ attempts, try a completely different strategy
-4. Helper lemmas are your friend - prove small facts to build up
+4. Helper lemmas are your friend - break big proofs into smaller ones that fit in context
 5. `gvs[AllCaseEqs()]` can be too aggressive - sometimes `fs[]` or `simp[]` is better
 6. For induction, make sure IH is applicable (check variable names)
+7. If tactic runs >15 seconds, interrupt and try a different approach
 
 ## Recovery
 
