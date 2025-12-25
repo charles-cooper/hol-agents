@@ -25,10 +25,9 @@ Implement an autonomous agent using the Claude Agent SDK (claude-agent-sdk) that
    - After max_agent_messages (default 40), trigger handoff:
      a) Ask Claude to commit progress if substantial
      b) Ask Claude to run p() and include proof state
-     c) Collect handoff summary text
-     d) Save to .agent_handoff.md
-     e) Clear session_id (force new session)
-   - On resume without session_id, load handoff context into prompt
+     c) Ask Claude to update task file with ## Handoff section
+     d) Clear session_id (force new session)
+   - On resume without session_id, task file contains handoff context
 
 5. INTERRUPT HANDLING (Ctrl+C)
    - First Ctrl+C: prompt for user input
@@ -89,7 +88,6 @@ class AgentConfig:
     model: str = "claude-opus-4-20250514"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 40  # Clear context after this many agent messages
-    handoff_file: str = ".agent_handoff.md"  # Handoff state between sessions
 
 
 def read_file(path: str) -> str:
@@ -293,7 +291,6 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
     error_count = 0
     message_count = 0
     session_id = None
-    handoff_path = os.path.join(config.working_dir, config.handoff_file)
     state_path = os.path.join(config.working_dir, ".agent_state.json")
 
     # Load previous state if exists
@@ -335,15 +332,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 if session_id:
                     # Resuming session - just continue
                     prompt = "Continue."
-                elif os.path.exists(handoff_path):
-                    # Have handoff context but no session (after context clear)
-                    handoff = read_file(handoff_path)
-                    print(f"[HANDOFF] Loading context ({len(handoff)} chars)...")
-                    base_prompt = initial_prompt or "Continue working."
-                    prompt = f"Resuming from previous session. Here's where we left off:\n\n{handoff}\n\n{base_prompt}"
                 else:
-                    # Fresh start
-                    prompt = initial_prompt or "Begin. Run Holmake to assess current state."
+                    # Fresh start or after handoff (handoff is in task file's ## Handoff section)
+                    prompt = initial_prompt or "Begin. Check the task file for any ## Handoff section from previous sessions, then run Holmake to assess current state."
 
                 await client.query(prompt)
 
@@ -387,9 +378,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         if "PROOF_COMPLETE:" in text:
                             summary = text.split("PROOF_COMPLETE:")[-1].strip()
                             print(f"\n[COMPLETE] {summary}")
-                            # Clean up state files
-                            if os.path.exists(handoff_path):
-                                os.remove(handoff_path)
+                            # Clean up state file
                             if os.path.exists(state_path):
                                 os.remove(state_path)
                             return True
@@ -405,23 +394,19 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "   - NEVER use `git add -A` or `git add .` - add specific files only "
                             "   - Run `git status` first to check what you're committing "
                             "   - Don't commit temp files, credentials, or .agent_* files "
-                            "2) If HOL session is running, run p() and include the proof state in your summary. "
-                            "3) Write a handoff summary: what you tried, what worked, what to try next, and the p() output. "
+                            "2) If HOL session is running, run p() and get the proof state. "
+                            "3) Update the task file: add or replace a `## Handoff` section at the end with: "
+                            "   - What you tried and what worked "
+                            "   - Current proof state (p() output) "
+                            "   - What to try next "
                             "4) DO NOT stop the HOL session - leave it running. "
-                            "5) After writing the summary, STOP. Do not continue working.")
+                            "5) After updating the task file, STOP. Do not continue working.")
 
-                        # Collect the handoff - save all text from response
-                        handoff_parts = []
+                        # Wait for agent to finish handoff
                         async for msg in client.receive_response():
-                            texts = print_message_blocks(msg, prefix="  [HANDOFF] ")
-                            handoff_parts.extend(texts)
+                            print_message_blocks(msg, prefix="  [HANDOFF] ")
 
-                        # Save handoff and state
-                        handoff_text = "\n".join(handoff_parts)
-                        if handoff_text:
-                            with open(handoff_path, 'w') as f:
-                                f.write(handoff_text)
-                            print(f"[HANDOFF] Saved {len(handoff_text)} chars to {config.handoff_file}")
+                        print(f"[HANDOFF] Agent updated task file")
 
                         # Clear session_id to force new session after handoff
                         session_id = None
