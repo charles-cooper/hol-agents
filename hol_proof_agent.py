@@ -91,7 +91,7 @@ class AgentConfig:
 
     @property
     def state_path(self) -> str:
-        return os.path.join(self.working_dir, ".claude", "agent_state.json")
+        return os.path.join(self.working_dir, ".claude", "hol_agent_state.json")
 
 
 def read_file(path: str) -> str:
