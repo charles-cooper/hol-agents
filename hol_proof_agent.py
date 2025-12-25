@@ -347,6 +347,13 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                 await client.query(prompt)
 
+                # Check if client has session_id after query
+                if hasattr(client, 'session_id') and client.session_id and client.session_id != session_id:
+                    session_id = client.session_id
+                    print(f"[SESSION] Got ID from client: {session_id}")
+                    with open(state_path, 'w') as f:
+                        json.dump({"session_id": session_id, "message_count": message_count}, f)
+
                 # Process messages until we hit the limit
                 async for message in client.receive_messages():
                     msg_type = type(message).__name__
