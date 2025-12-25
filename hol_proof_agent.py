@@ -339,12 +339,18 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
             async with ClaudeSDKClient(opts) as client:
                 # Build and send prompt
+                default_new = f"Begin. First run hol-agent-helper.sh status and p() if running. Then read {config.task_file} for ## Handoff section."
+                default_resume = f"Continue. Task file: {config.task_file}"
+
                 if session_id:
-                    # Resuming session - remind of task file location
-                    prompt = initial_prompt or f"Continue. Task file: {config.task_file}"
+                    # Resuming API session - agent already has context
+                    prompt = initial_prompt or default_resume
                 else:
-                    # Fresh start or after handoff (handoff is in task file's ## Handoff section)
-                    prompt = initial_prompt or f"Begin. First run hol-agent-helper.sh status and p() if running. Then read {config.task_file} for ## Handoff section."
+                    # New API session - always check handoff, then apply custom instruction if any
+                    if initial_prompt:
+                        prompt = f"{default_new} The initial prompt was: {initial_prompt}"
+                    else:
+                        prompt = default_new
 
                 await client.query(prompt)
 
