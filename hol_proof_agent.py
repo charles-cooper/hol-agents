@@ -339,7 +339,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     prompt = "Continue."
                 else:
                     # Fresh start or after handoff (handoff is in task file's ## Handoff section)
-                    prompt = initial_prompt or "Begin. Check the task file for any ## Handoff section from previous sessions."
+                    prompt = initial_prompt or f"Begin. Read the task file at {config.task_file} and check for any ## Handoff section from previous sessions."
 
                 await client.query(prompt)
 
