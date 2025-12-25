@@ -395,10 +395,12 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "   - Run `git status` first to check what you're committing "
                             "   - Don't commit temp files, credentials, or .agent_* files "
                             "2) If HOL session is running, run p() and get the proof state. "
-                            "3) Update the task file: add or replace a `## Handoff` section at the end with: "
-                            "   - What you tried and what worked "
-                            "   - Current proof state (p() output) "
-                            "   - What to try next "
+                            "3) Update the task file: "
+                            "   - Remove any outdated info (old handoffs, superseded notes) to save context "
+                            "   - Add or replace a `## Handoff` section at the end with: "
+                            "     * What you tried and what worked "
+                            "     * Current proof state (p() output) "
+                            "     * What to try next "
                             "4) DO NOT stop the HOL session - leave it running. "
                             "5) After updating the task file, STOP. Do not continue working.")
 
