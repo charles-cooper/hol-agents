@@ -168,6 +168,9 @@ Use the Bash tool with ~/hol-agents/hol-agent-helper.sh:
 ~/hol-agents/hol-agent-helper.sh stop
 ```
 
+**Timeouts:** Default to `timeout: 5000` (5 seconds) on Bash tool calls for tactics.
+If a tactic times out, it's likely too slow - try a different approach.
+
 ## Goaltree Mode (Interactive Proving)
 
 Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
