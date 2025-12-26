@@ -46,7 +46,7 @@ class HOLSession:
 
         return f"HOL started (PID {self.process.pid})"
 
-    async def send(self, sml_code: str, timeout: int = 120) -> str:
+    async def send(self, sml_code: str, timeout: float = 5) -> str:
         """Send SML code and wait for response."""
         if not self.process or self.process.returncode is not None:
             return "ERROR: HOL not running"
@@ -56,38 +56,40 @@ class HOLSession:
         await self.process.stdin.drain()
 
         try:
-            output = await self._read_until_null(timeout=timeout)
-            return output
+            return await self._read_until_null(timeout=timeout)
         except asyncio.TimeoutError:
-            # Timeout - interrupt the process group
             self.interrupt()
-            # Try to read any output after interrupt
             try:
                 remaining = await self._read_until_null(timeout=5)
-                return f"TIMEOUT after {timeout}s - sent interrupt.\n{remaining}"
             except asyncio.TimeoutError:
-                return f"TIMEOUT after {timeout}s - sent interrupt. Try a different tactic."
+                remaining = ""
+            # HOL outputs extra null byte after interrupt - drain it
+            self._buffer = self._buffer.lstrip(b'\0')
+            await self._drain_null()
+            msg = f"TIMEOUT after {timeout}s - sent interrupt."
+            return f"{msg}\n{remaining}" if remaining else msg
 
-    async def _read_until_null(self, timeout: int) -> str:
+    async def _drain_null(self):
+        """Drain extra null byte from pipe after interrupt."""
+        try:
+            b = await asyncio.wait_for(self.process.stdout.read(1), timeout=0.1)
+            if b and b != b'\0':
+                self._buffer = b + self._buffer
+        except asyncio.TimeoutError:
+            pass
+
+    async def _read_until_null(self, timeout: float) -> str:
         """Read stdout until null byte."""
         async def read_loop():
             while True:
                 chunk = await self.process.stdout.read(4096)
                 if not chunk:
-                    # EOF - process died
-                    if self._buffer:
-                        result = self._buffer.decode('utf-8', errors='replace')
-                        self._buffer = b""
-                        return result
                     raise RuntimeError("HOL process died unexpectedly")
 
                 self._buffer += chunk
                 if b'\0' in self._buffer:
-                    # Split at null, keep remainder
-                    parts = self._buffer.split(b'\0', 1)
-                    result = parts[0].decode('utf-8', errors='replace')
-                    self._buffer = parts[1] if len(parts) > 1 else b""
-                    return result
+                    before, self._buffer = self._buffer.split(b'\0', 1)
+                    return before.decode()
 
         return await asyncio.wait_for(read_loop(), timeout=timeout)
 

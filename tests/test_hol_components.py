@@ -106,9 +106,9 @@ simp[foo_def]
 val it = () : unit
 '''
     result = parse_p_output(output)
-    assert result is not None
-    assert 'Induct_on' in result
-    assert 'val it' not in result
+    assert result == '''Induct_on `x` \\
+gvs[] \\
+simp[foo_def]'''
 
 
 async def test_hol_session():
@@ -125,6 +125,36 @@ async def test_hol_session():
     finally:
         await session.stop()
         assert not session.is_running
+
+
+async def test_hol_session_context_manager():
+    """Test HOL session as async context manager."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        assert session.is_running
+        result = await session.send('3 + 4;', timeout=10)
+        assert "7" in result
+        assert session.is_running
+    assert not session.is_running
+
+
+async def test_hol_session_interrupt():
+    """Test interrupting a long-running HOL command."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Start a long-running computation via short timeout
+        result = await session.send('fun loop () = loop (); loop ();', timeout=1)
+        assert "TIMEOUT" in result or "interrupt" in result.lower()
+
+        # Session should still be usable after interrupt
+        assert session.is_running
+        result = await session.send('1 + 1;', timeout=10)
+        assert "2" in result
+
+
+async def test_hol_session_send_not_running():
+    """Test sending to a stopped session returns error."""
+    session = HOLSession(str(FIXTURES_DIR))
+    result = await session.send('1 + 1;', timeout=10)
+    assert "ERROR" in result
 
 
 def test_is_allowed_command():
