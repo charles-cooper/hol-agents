@@ -421,6 +421,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "     * What you tried and what worked "
                             "     * Current proof state (p() output) "
                             "     * What to try next "
+                            "   - ultrathink like a prompt engineer to provide all necessary info in the handoff prompt but context optimized "
                             "4) DO NOT stop the HOL session - leave it running. "
                             "5) After updating the task file, STOP. Do not continue working.")
 
