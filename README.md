@@ -23,8 +23,8 @@ mkdir -p .claude/skills
 ln -s /path/to/hol-agents/skills/hol .claude/skills/hol
 
 # Or personal (available in all projects)
-mkdir -p ~/.claude/skills
-ln -s /path/to/hol-agents/skills/hol ~/.claude/skills/hol
+mkdir -p "$HOME/.claude/skills"
+ln -s /path/to/hol-agents/skills/hol "$HOME/.claude/skills/hol"
 ```
 
 After installation, Claude will automatically use the skill when working with HOL4 proofs, .sml theorem files, or Holmake builds.
@@ -122,7 +122,7 @@ This command loads a HOL script file up to a specified line, automatically handl
 - `LINE_NUMBER` must point to a blank line in the script
 - The blank line should follow a "block ender" (`End`, `QED`, `Termination`, or a line ending with `;`)
 - The script should be buildable (compiles with Holmake, possibly with cheats)
-- Requires `holdeptool.exe` at `~/HOL/bin/holdeptool.exe`
+- Requires `holdeptool.exe` at `$HOLDIR/bin/holdeptool.exe`
 
 **What it does:**
 1. Validates the line is blank and follows a block ender

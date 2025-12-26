@@ -18,6 +18,4 @@ val _ = app load ["aiLib", "smlTimeout", "smlLexer", "smlExecute"];
 
 fun etq s = proofManagerLib.et (s, smlExecute.tactic_of_sml 30.0 s)
   handle HOL_ERR _ =>
-    raise HOL_ERR {origin_structure = "etq",
-                   origin_function = "etq",
-                   message = "Cannot compile tactic: " ^ s};
+    raise mk_HOL_ERR "etq" "etq" ("Cannot compile tactic: " ^ s);
