@@ -414,6 +414,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "3) Update the task file: "
                             "   - Remove any outdated info (old handoffs, superseded notes) to save context "
                             "   - Add or replace a `## Handoff` section at the end with: "
+                            "     * Working directory (pwd) and git branch "
                             "     * What you tried and what worked "
                             "     * Current proof state (p() output) "
                             "     * What to try next "
