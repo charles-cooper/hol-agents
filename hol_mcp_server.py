@@ -217,7 +217,7 @@ async def hol_stop(session: str) -> str:
 
 
 @mcp.tool()
-async def hol_build(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024) -> str:
+async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024) -> str:
     """Run Holmake --qof in directory.
 
     Args:
@@ -313,7 +313,7 @@ async def hol_build(workdir: str, target: str = None, env: dict = None, log_limi
 async def hol_log(workdir: str, theory: str, limit: int = 1024) -> str:
     """Read build log for a specific theory.
 
-    Use after hol_build to inspect warnings or errors in detail.
+    Use after holmake to inspect warnings or errors in detail.
 
     Args:
         workdir: Directory containing .hol/logs/

@@ -143,7 +143,11 @@ def parse_file(path: Path) -> list[TheoremInfo]:
 
 
 def splice_into_theorem(content: str, name: str, tactics: str) -> str:
-    """Replace Proof...QED block for named theorem with new tactics."""
+    """Replace Proof...QED block for named theorem with new tactics.
+
+    Raises:
+        ValueError: If theorem not found in content.
+    """
     # Match Theorem/Triviality name[...]: ... Proof ... QED
     pattern = rf'''
         ((?:Theorem|Triviality)\s+{re.escape(name)}
@@ -161,7 +165,10 @@ def splice_into_theorem(content: str, name: str, tactics: str) -> str:
         indented = _indent(tactics, "  ")
         return f"{header}{indented}{footer}"
 
-    return re.sub(pattern, replacer, content, flags=re.DOTALL | re.VERBOSE)
+    new_content = re.sub(pattern, replacer, content, flags=re.DOTALL | re.VERBOSE)
+    if new_content == content:
+        raise ValueError(f"Theorem '{name}' not found")
+    return new_content
 
 
 def _indent(text: str, prefix: str) -> str:

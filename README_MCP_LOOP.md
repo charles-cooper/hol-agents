@@ -43,7 +43,7 @@ python hol_proof_agent.py --task path/to/TASK_foo.md
 - `hol_send(session, command, timeout)` - Send SML code
 - `hol_proof_state(session)` - Get current goals (p() + top_goals())
 - `hol_interrupt(session)` - Abort runaway tactic (SIGINT)
-- `hol_build(workdir, target)` - Run Holmake --qof
+- `holmake(workdir, target)` - Run Holmake --qof
 
 ### Cursor Tools (multi-theorem files)
 - `hol_cursor_init(session, file)` - Parse file, position at first cheat
@@ -88,7 +88,7 @@ At `--max-messages` threshold:
 ## Completion
 
 Agent outputs `PROOF_COMPLETE: <summary>` when:
-- `hol_build(workdir)` passes (exit 0)
+- `holmake(workdir)` passes (exit 0)
 - No CHEAT warnings in output
 - No FAIL in output
 

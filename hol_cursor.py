@@ -129,10 +129,6 @@ class ProofCursor:
         # Splice into file
         content = self.file.read_text()
         new_content = splice_into_theorem(content, thm.name, tactic_script)
-
-        if new_content == content:
-            return f"ERROR: Could not splice into {thm.name}"
-
         atomic_write(self.file, new_content)
         self.completed.add(thm.name)
 

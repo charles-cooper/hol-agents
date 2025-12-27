@@ -30,7 +30,7 @@ Components
    - hol_proof_state(session) -> Run p() + top_goals(), return formatted
    - hol_interrupt(session) -> SIGINT to process group
    - hol_stop(session) -> SIGTERM + wait
-   - hol_build(workdir, target="") -> Run Holmake --qof
+   - holmake(workdir, target="") -> Run Holmake --qof
 
    Cursor tools (multi-theorem files):
    - hol_cursor_init(session, file) -> Parse SML, find cheats, load context
@@ -92,7 +92,7 @@ Components
    - Goaltree mode: gt, etq, p(), backup(), top_goals(), drop()
    - Subgoal patterns: by, sg, suffices_by
    - Workflow: assess -> identify cheats -> debug interactively -> update file -> verify
-   - Recovery: read task file, hol_sessions(), hol_proof_state(), hol_build()
+   - Recovery: read task file, hol_sessions(), hol_proof_state(), holmake()
 
 Dependencies: fastmcp>=2.0.0, claude-agent-sdk>=0.1.0
 
@@ -152,7 +152,7 @@ def is_allowed_command(cmd: str) -> bool:
 
     prog = tokens[0]
 
-    # Git commands only - use hol_build MCP tool for Holmake
+    # Git commands only - use holmake MCP tool for Holmake
     if prog == "git" and len(tokens) >= 2:
         return tokens[1] in ALLOWED_GIT_SUBCOMMANDS
 
@@ -241,7 +241,7 @@ def build_system_prompt(config: AgentConfig) -> str:
 
 ## COMPLETION CRITERIA
 The proof is complete when:
-1. `hol_build(workdir)` succeeds (set MYVAR if needed for myval builds)
+1. `holmake(workdir)` succeeds (set MYVAR if needed for myval builds)
 2. NO "CHEAT" warnings in output
 3. NO "FAIL" in output
 
@@ -273,7 +273,7 @@ You have access to HOL4 tools via MCP. Use these instead of Bash for HOL interac
 - `hol_send(session, command, timeout)` - Send SML code to HOL
 - `hol_proof_state(session)` - Get current goals (runs p() and top_goals())
 - `hol_interrupt(session)` - Abort runaway tactic (SIGINT)
-- `hol_build(workdir, target)` - Run Holmake --qof
+- `holmake(workdir, target)` - Run Holmake --qof
 
 ### Cursor Tools (multi-theorem files)
 - `hol_cursor_init(session, file)` - Parse file, position at first cheat
@@ -288,7 +288,7 @@ You have access to HOL4 tools via MCP. Use these instead of Bash for HOL interac
 3. hol_send(session="main", command='gt `goal`;')
 4. hol_send(session="main", command='etq "tactic";')
 5. hol_proof_state(session="main")  # Check progress
-6. hol_build(workdir="/path/to/proofs")  # Verify
+6. holmake(workdir="/path/to/proofs")  # Verify
 ```
 
 ## Goaltree Mode (Interactive Proving)
@@ -316,7 +316,7 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 
 ## Workflow
 
-1. **Assess**: Run `hol_build(workdir)` to see current state
+1. **Assess**: Run `holmake(workdir)` to see current state
 2. **Identify**: Find theorems with CHEAT warnings
 3. **Debug interactively**:
    - Start HOL session: `hol_start(workdir, "main")`
@@ -325,7 +325,7 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
    - Check state: `hol_proof_state("main")`
    - Undo mistakes: `hol_send("main", 'backup();')`
 4. **Update file**: Copy tactic script from p() into Theorem block
-5. **Verify**: Run hol_build again
+5. **Verify**: Run holmake again
 6. **Iterate**: Until no cheats remain
 
 ## Critical Rules
@@ -343,7 +343,7 @@ If context seems lost:
 1. Read task file for ## Handoff section
 2. Run hol_sessions() to see what's running
 3. If session exists, hol_proof_state() to check state
-4. Run hol_build() to see what's failing
+4. Run holmake() to see what's failing
 
 BEGIN NOW.
 """

@@ -13,7 +13,7 @@ from hol_mcp_server import (
     hol_stop as _hol_stop,
     hol_log as _hol_log,
     hol_logs as _hol_logs,
-    hol_build as _hol_build,
+    holmake as _holmake,
 )
 
 # Unwrap FunctionTool to get actual functions
@@ -24,7 +24,7 @@ hol_sessions = _hol_sessions.fn
 hol_stop = _hol_stop.fn
 hol_log = _hol_log.fn
 hol_logs = _hol_logs.fn
-hol_build = _hol_build.fn
+holmake = _holmake.fn
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -87,7 +87,7 @@ async def test_db_search(workdir):
 
 
 async def test_build_and_logs(workdir):
-    """Test hol_build generates logs, then test hol_logs/hol_log."""
+    """Test holmake generates logs, then test hol_logs/hol_log."""
     # Clean build artifacts to ensure fresh build
     hol_dir = Path(workdir) / ".hol"
     if hol_dir.exists():
@@ -99,7 +99,7 @@ async def test_build_and_logs(workdir):
     for f in Path(workdir).glob("*Theory.*"):
         f.unlink()
 
-    result = await hol_build(workdir=workdir, target="testTheory")
+    result = await holmake(workdir=workdir, target="testTheory")
     assert "Build succeeded" in result
     assert "testTheory" in result
 
@@ -121,7 +121,7 @@ async def test_build_failure_includes_logs(workdir):
     if hol_dir.exists():
         shutil.rmtree(hol_dir)
 
-    result = await hol_build(workdir=workdir, target="failTheory")
+    result = await holmake(workdir=workdir, target="failTheory")
     assert "Build failed" in result
     assert "=== Build Logs ===" in result
     assert "failTheory" in result

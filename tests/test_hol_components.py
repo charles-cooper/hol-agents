@@ -3,9 +3,16 @@
 import pytest
 from pathlib import Path
 
-from hol_file_parser import parse_theorems, parse_file, splice_into_theorem, parse_p_output
+import tempfile
+from unittest.mock import Mock
+
+from hol_file_parser import (
+    parse_theorems, parse_file, splice_into_theorem, parse_p_output,
+    _parse_tactics_before_cheat, TheoremInfo,
+)
+from hol_cursor import ProofCursor, atomic_write
 from hol_session import HOLSession
-from hol_proof_agent import is_allowed_command
+from hol_proof_agent import is_allowed_command, get_large_files
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -166,7 +173,7 @@ def test_is_allowed_command():
     assert is_allowed_command('git diff')
     assert is_allowed_command('git log --oneline')
 
-    # Should block - use hol_build MCP tool instead
+    # Should block - use holmake MCP tool instead
     assert not is_allowed_command('Holmake')
     assert not is_allowed_command('MYVAR=/path Holmake')
 
@@ -180,3 +187,149 @@ def test_is_allowed_command():
     assert not is_allowed_command('')
     assert not is_allowed_command('git')  # bare git
     assert not is_allowed_command('echo $(whoami)')  # command substitution
+
+
+# =============================================================================
+# File Parser Tests (_parse_tactics_before_cheat, _indent)
+# =============================================================================
+
+def test_parse_tactics_before_cheat_basic():
+    result = _parse_tactics_before_cheat("rw[] \\\\ cheat")
+    assert result == ["rw[]"]
+
+
+def test_parse_tactics_before_cheat_multiple():
+    result = _parse_tactics_before_cheat("rw[] \\\\ gvs[] \\\\ cheat")
+    assert result == ["rw[]", "gvs[]"]
+
+
+def test_parse_tactics_before_cheat_nested_parens():
+    result = _parse_tactics_before_cheat("(rw[] \\\\ gvs[]) \\\\ cheat")
+    assert result == ["(rw[] \\\\ gvs[])"]
+
+
+def test_parse_tactics_before_cheat_subgoal():
+    result = _parse_tactics_before_cheat("rw[] >- gvs[] \\\\ cheat")
+    assert result == ["rw[]", "gvs[]"]
+
+
+def test_parse_tactics_before_cheat_empty():
+    assert _parse_tactics_before_cheat("cheat") == []
+
+
+def test_parse_tactics_before_cheat_no_cheat():
+    assert _parse_tactics_before_cheat("rw[]") == []
+
+
+def test_splice_into_theorem_not_found():
+    content = 'Theorem foo:\n  P\nProof\n  cheat\nQED\n'
+    with pytest.raises(ValueError, match="not found"):
+        splice_into_theorem(content, 'nonexistent', 'simp[]')
+
+
+def test_parse_p_output_empty():
+    assert parse_p_output("") is None
+
+
+def test_parse_p_output_only_prompts():
+    assert parse_p_output("> p();\nval it = () : unit\n") is None
+
+
+# =============================================================================
+# Cursor Navigation Tests (ProofCursor, atomic_write)
+# =============================================================================
+
+def test_proof_cursor_next_cheat():
+    session = Mock()
+    cursor = ProofCursor(Path("/tmp/test.sml"), session)
+    cursor.theorems = [
+        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False, [], []),
+        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True, [], []),
+        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True, [], []),
+    ]
+    cursor.position = 0
+    cursor.completed = {"b"}
+    assert cursor.next_cheat().name == "c"
+
+
+def test_atomic_write():
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "test.txt"
+        atomic_write(p, "hello")
+        assert p.read_text() == "hello"
+
+
+# =============================================================================
+# Agent Helpers Tests (get_large_files)
+# =============================================================================
+
+def test_get_large_files_empty():
+    with tempfile.TemporaryDirectory() as d:
+        assert get_large_files(d) == []
+
+
+def test_get_large_files_finds_large():
+    with tempfile.TemporaryDirectory() as d:
+        small = Path(d) / "small.sml"
+        small.write_text("x\n" * 100)
+        large = Path(d) / "large.sml"
+        # Need 600 lines AND >= byte_threshold (default 15000 bytes).
+        # "x" * 30 + "\n" = 31 bytes per line, 600 lines = 18600 bytes > 15000
+        large.write_text(("x" * 30 + "\n") * 600)
+        result = get_large_files(d, line_threshold=500)
+        assert len(result) == 1
+        assert result[0][0] == "large.sml"
+        assert result[0][1] == 600
+
+
+# =============================================================================
+# ProofCursor Integration Tests
+# =============================================================================
+
+async def test_proof_cursor_initialize():
+    """Test ProofCursor.initialize with real HOL session."""
+    import shutil
+    with tempfile.TemporaryDirectory() as d:
+        # Copy fixture to temp dir (so we don't modify original)
+        test_file = Path(d) / "testScript.sml"
+        shutil.copy(FIXTURES_DIR / "testScript.sml", test_file)
+
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            result = await cursor.initialize()
+
+            # Should position at first cheat (needs_proof)
+            assert "needs_proof" in result
+            assert cursor.current().name == "needs_proof"
+            assert cursor.current().has_cheat
+
+
+async def test_proof_cursor_start_current():
+    """Test ProofCursor.start_current sets up goaltree."""
+    import shutil
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        shutil.copy(FIXTURES_DIR / "testScript.sml", test_file)
+
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+
+            result = await cursor.start_current()
+            assert "Ready" in result or "needs_proof" in result
+
+            # Verify goaltree is active
+            state = await session.send("top_goals();", timeout=10)
+            assert "goal" in state.lower() or "+" in state  # Goals present
+
+
+# =============================================================================
+# Session Edge Case Tests
+# =============================================================================
+
+async def test_hol_session_start_already_running():
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        pid = session.process.pid
+        result = await session.start()
+        assert "already running" in result.lower()
+        assert session.process.pid == pid
