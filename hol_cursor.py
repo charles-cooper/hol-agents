@@ -128,7 +128,10 @@ class ProofCursor:
 
         # Splice into file
         content = self.file.read_text()
-        new_content = splice_into_theorem(content, thm.name, tactic_script)
+        try:
+            new_content = splice_into_theorem(content, thm.name, tactic_script)
+        except ValueError:
+            return f"ERROR: Failed to splice into {thm.name} (file modified externally?)"
         atomic_write(self.file, new_content)
         self.completed.add(thm.name)
 
