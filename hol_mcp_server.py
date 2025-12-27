@@ -23,17 +23,23 @@ class SessionEntry:
     session: HOLSession
     started: datetime
     workdir: Path
+    cursor: Optional[ProofCursor] = None
 
 
 mcp = FastMCP("hol")
 _sessions: dict[str, SessionEntry] = {}
-_cursors: dict[str, ProofCursor] = {}  # session_name -> cursor
 
 
 def _get_session(name: str) -> Optional[HOLSession]:
     """Get session from registry, or None if not found."""
     entry = _sessions.get(name)
     return entry.session if entry else None
+
+
+def _get_cursor(name: str) -> Optional[ProofCursor]:
+    """Get cursor from registry, or None if not found."""
+    entry = _sessions.get(name)
+    return entry.cursor if entry else None
 
 
 def _session_age(name: str) -> str:
@@ -399,7 +405,7 @@ async def hol_cursor_init(file: str, session: str = "default", workdir: str = No
     cursor = ProofCursor(file_path, s)
     result = await cursor.initialize()
 
-    _cursors[session] = cursor
+    _sessions[session].cursor = cursor
 
     # Build status
     status = cursor.status
@@ -436,7 +442,7 @@ async def hol_cursor_status(session: str) -> str:
 
     Returns: Current theorem, position, completed list, remaining cheats
     """
-    cursor = _cursors.get(session)
+    cursor = _get_cursor(session)
     if not cursor:
         return f"ERROR: No cursor for session '{session}'. Use hol_cursor_init() first."
 
@@ -463,7 +469,7 @@ async def hol_cursor_reenter(session: str) -> str:
 
     Returns: Confirmation and current goal state
     """
-    cursor = _cursors.get(session)
+    cursor = _get_cursor(session)
     if not cursor:
         return f"ERROR: No cursor for session '{session}'. Use hol_cursor_init() first."
 
@@ -491,7 +497,7 @@ async def hol_cursor_complete(session: str) -> str:
 
     Returns: Confirmation, next theorem info, and current goals (if any remain)
     """
-    cursor = _cursors.get(session)
+    cursor = _get_cursor(session)
     if not cursor:
         return f"ERROR: No cursor for session '{session}'. Use hol_cursor_init() first."
 

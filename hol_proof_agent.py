@@ -76,9 +76,8 @@ Components
 
    Handoff prompt must include:
    - Commit progress (git add specific files only, never -A)
-   - Run hol_start() to capture proof state
-   - Update task file ## Handoff section with: workdir, branch, hol session name,
-     what tried, what worked, current state, next steps
+   - Update task file ## Handoff section with: what tried, what worked, next steps
+     (p()/goals/holmake are auto-injected at startup)
    - DO NOT stop HOL session
 
    Interrupt handling: Ctrl+C -> save state, prompt for input, 'q' to quit
@@ -124,7 +123,7 @@ from claude_agent_sdk import (
 )
 
 # Import MCP server instance - allows HOL sessions to persist across handoffs
-from hol_mcp_server import mcp as hol_mcp
+from hol_mcp_server import mcp as hol_mcp, _sessions, hol_sessions, hol_send, holmake
 
 
 # =============================================================================
@@ -200,7 +199,7 @@ class AgentState:
     session_id: Optional[str] = None
     message_count: int = 0
     session_message_count: int = 0
-    hol_session: Optional[str] = None
+    hol_session: Optional[str] = None  # HOL session name (key into _sessions)
     # Usage tracking
     input_tokens: int = 0
     output_tokens: int = 0
@@ -508,6 +507,48 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     task = read_file(config.task_file)
                     init = read_file(os.path.join(config.working_dir, ".hol_init.sml"))
 
+                    # Inject HOL state to save agent turns
+                    hol_state = ""
+                    try:
+                        sessions_out = await hol_sessions.fn()
+                        hol_state = f"\n\n[auto] hol_sessions():\n{sessions_out}\n"
+                    except Exception as e:
+                        hol_state = f"\n\n[auto] hol_sessions() error: {e}\n"
+
+                    if not state.hol_session:
+                        pass
+                    elif state.hol_session not in _sessions:
+                        hol_state += f"\n[auto] Session '{state.hol_session}' not found. See task file for workdir."
+                        state.hol_session = None
+                        state.save()
+                    else:
+                        entry = _sessions[state.hol_session]
+                        workdir = str(entry.workdir)
+
+                        if not entry.session.is_running:
+                            hol_state += f"\n[auto] Session '{state.hol_session}' died. Restart: hol_start(\"{workdir}\")"
+                        else:
+                            try:
+                                p_out = await hol_send.fn(state.hol_session, "p();", timeout=10)
+                                goals = await hol_send.fn(state.hol_session, "top_goals();", timeout=10)
+                                hol_state += f"\n[auto] hol_send(\"{state.hol_session}\", \"p();\"):\n{p_out}\n"
+                                hol_state += f"\n[auto] hol_send(\"{state.hol_session}\", \"top_goals();\"):\n{goals}"
+                            except Exception as e:
+                                hol_state += f"\n[auto] p()/top_goals() error: {e}. Try hol_interrupt() or hol_restart()."
+
+                        if entry.cursor:
+                            status = entry.cursor.status
+                            hol_state += f"\n\n[auto] hol_cursor_status(\"{state.hol_session}\"):\n"
+                            hol_state += f"File: {status['file']}\n"
+                            hol_state += f"Position: {status['position']}, Current: {status['current']} (line {status['current_line']})\n"
+                            hol_state += f"Remaining cheats: {status['remaining_cheats']}"
+
+                        try:
+                            hm_out = await holmake.fn(workdir, timeout=60)
+                            hol_state += f"\n\n[auto] holmake(\"{workdir}\"):\n{hm_out}"
+                        except Exception as e:
+                            hol_state += f"\n\n[auto] holmake error: {e}"
+
                     prompt = f"## Task File: {config.task_file}\n{task}\n\n"
                     if init:
                         prompt += f"## .hol_init.sml\n{init}\n\n"
@@ -515,7 +556,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     prompt += "Begin. Check ## Handoff section above for current state."
                     if state.hol_session:
                         prompt += f" Previous HOL session: '{state.hol_session}'."
-                    prompt += " Start with hol_cursor_init(file) or holmake(workdir)."
+                    prompt += hol_state
                     if initial_prompt:
                         prompt += f" {initial_prompt}"
 
@@ -585,16 +626,15 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "1) If you made substantial progress, commit it: "
                             "   - NEVER `git add -A` or `git add .` - only specific .sml files "
                             "   - Use `git diff <file>` to verify before adding "
-                            "2) Run hol_start() to get current proof state. "
-                            "3) Ultrathink like a prompt engineer and write a "
+                            "2) Ultrathink like a prompt engineer and write a "
                             f"handoff prompt in {config.task_file} to provide all "
                             "necessary info but context optimized. Tell the next agent to start "
                             "work immediately. Include: "
-                            "   - Working directory, git branch, HOL session name "
-                            "   - What you tried, what worked, current p() state "
+                            "   - What you tried, what worked "
                             "   - What to try next (be specific - this is your only memory) "
-                            "4) Leave HOL session running. "
-                            "5) STOP after updating task file."
+                            "   (p()/goals/holmake are auto-injected at startup) "
+                            "3) Leave HOL session running. "
+                            "4) STOP after updating task file."
                         )
 
                         print(f"[SEND] {handoff_prompt}")
