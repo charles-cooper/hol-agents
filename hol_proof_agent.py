@@ -362,12 +362,18 @@ def print_message_blocks(message, prefix="  ") -> list[str]:
                 if content:
                     # ToolResultBlock.content is str | list[dict] | None
                     if isinstance(content, str):
-                        text = content
+                        # SDK may wrap results as JSON: {"result": "..."}
+                        try:
+                            parsed = json.loads(content)
+                            text = parsed.get('result', content) if isinstance(parsed, dict) else content
+                        except json.JSONDecodeError:
+                            text = content
                     elif isinstance(content, list):
                         # MCP returns [{"type": "text", "text": "..."}]
                         text = '\n'.join(item.get('text', str(item)) for item in content)
                     else:
                         text = str(content)
+                    texts.append(text)  # Include tool output for session detection
                     print(f"{prefix}[TOOL OUTPUT]\n{text}")
                 else:
                     print(f"{prefix}[TOOL OUTPUT] (none)")
@@ -446,15 +452,16 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
             async with ClaudeSDKClient(opts) as client:
                 # Build prompt
                 if session_id:
+                    # Resuming SDK session - agent has context
                     prompt = initial_prompt or f"Continue. Task: {config.task_file}"
-                    if hol_session:
-                        prompt += f" HOL session '{hol_session}' may still be running - use hol_start() to reconnect."
                 else:
-                    prompt = f"Begin. Read {config.task_file} for ## Handoff section."
-                    if initial_prompt:
-                        prompt = f"{prompt} Initial instruction: {initial_prompt}"
+                    # New SDK session - need to recover context
+                    prompt = f"Begin. First run hol_start() to check/start HOL session."
                     if hol_session:
-                        prompt += f" Previous HOL session '{hol_session}' - use hol_start() to reconnect (it's idempotent)."
+                        prompt += f" Previous session was '{hol_session}'."
+                    prompt += f" Then read {config.task_file} for ## Handoff section."
+                    if initial_prompt:
+                        prompt += f" Initial instruction: {initial_prompt}"
 
                     large_files = get_large_files(config.working_dir)
                     if large_files:
@@ -516,21 +523,32 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         print(f"\n[HANDOFF] Reached {config.max_agent_messages} messages...")
 
                         handoff_prompt = (
-                            "STOP. Context clearing now. "
-                            "1) Commit progress if substantial (git add specific files only, never -A). "
-                            "2) Update task file with ## Handoff section: "
-                            "   - Working directory, git branch, HOL session name "
-                            "   - What you tried, what worked "
-                            "   - What to try next "
-                            "3) DO NOT stop the HOL session - leave it running. "
-                            "4) STOP after updating task file."
+                            "STOP. We're clearing context now. "
+                            "1) If you made substantial progress (cleared a cheat, restructured proof), commit it: "
+                            "   - Run `git status` to review what would be committed "
+                            "   - NEVER use `git add -A`, `git add .`, or `git add <directory>` "
+                            "   - ONLY `git add` specific .sml files you intentionally modified "
+                            "   - Use `git diff <file>` to verify changes before adding "
+                            "2) Run hol_start() to get current proof state (p() output). "
+                            "3) Update the task file: "
+                            "   - Remove any outdated info (old handoffs, superseded notes) to save context "
+                            "   - Add or replace a `## Handoff` section at the end with: "
+                            "     * Working directory (pwd) and git branch "
+                            "     * HOL session name "
+                            "     * What you tried and what worked "
+                            "     * Current proof state (p() output) "
+                            "     * What to try next "
+                            "4) DO NOT stop the HOL session - leave it running. "
+                            "5) After updating the task file, STOP. Do not continue working."
                         )
 
                         await client.query(handoff_prompt)
                         async for msg in client.receive_response():
                             print_message_blocks(msg, prefix="  [HANDOFF] ")
 
-                        # Clear session for new start
+                        print(f"[HANDOFF] Agent updated task file")
+
+                        # Clear SDK session to force fresh context, but preserve HOL session
                         session_id = None
                         session_message_count = 0
                         with open(state_path, 'w') as f:
@@ -540,7 +558,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                                 "session_message_count": 0,
                                 "hol_session": hol_session,
                             }, f)
-                        print(f"[HANDOFF] Cleared session, HOL '{hol_session}' preserved")
+                        print(f"[HANDOFF] Cleared SDK session, {message_count} total, HOL '{hol_session}'")
                         break
 
                     # Result message - send continue prompt
@@ -548,7 +566,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         result = message.result or ""
                         if result:
                             print(f"  [RESULT] {result}")
-                        await client.query("Continue. Output PROOF_COMPLETE: <summary> when done.")
+                        await client.query("Continue working. Do not stop until Holmake passes with no cheats. Output PROOF_COMPLETE: <summary> when done.")
 
             error_count = 0
 

@@ -8,7 +8,6 @@ from pathlib import Path
 from hol_mcp_server import (
     hol_start as _hol_start,
     hol_send as _hol_send,
-    hol_proof_state as _hol_proof_state,
     hol_sessions as _hol_sessions,
     hol_stop as _hol_stop,
     hol_log as _hol_log,
@@ -19,7 +18,6 @@ from hol_mcp_server import (
 # Unwrap FunctionTool to get actual functions
 hol_start = _hol_start.fn
 hol_send = _hol_send.fn
-hol_proof_state = _hol_proof_state.fn
 hol_sessions = _hol_sessions.fn
 hol_stop = _hol_stop.fn
 hol_log = _hol_log.fn
@@ -65,9 +63,8 @@ async def test_goaltree_mode(workdir):
         result = await hol_send(session="gt_test", command='etq "EVAL_TAC";')
         assert "OK" in result
 
-        result = await hol_proof_state(session="gt_test")
-        assert "=== Proof tree (p()) ===" in result
-        assert "=== Current goals (top_goals()) ===" in result
+        # Check proof state via hol_send
+        result = await hol_send(session="gt_test", command="top_goals();")
         assert "val it = []: goal list" in result  # No remaining goals
     finally:
         await hol_stop(session="gt_test")
