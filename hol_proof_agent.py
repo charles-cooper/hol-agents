@@ -31,11 +31,11 @@ Components
    - hol_restart(session) -> Stop + start (preserves workdir)
    - holmake(workdir, target="", timeout=90) -> Run Holmake --qof
 
-   Cursor tools (multi-theorem files) - RECOMMENDED entry point:
-   - hol_cursor_init(file, session="default", workdir=None) -> Parse, load, enter goaltree
+   Cursor tools (RECOMMENDED entry point):
+   - hol_cursor_init(file, session="default", workdir=None) -> Auto-start session, parse file, enter goaltree for first cheat
+   - hol_cursor_complete(session) -> Extract p(), splice into file, advance, enter goaltree for next
    - hol_cursor_status(session) -> Position, completed, remaining cheats
-   - hol_cursor_complete(session) -> Extract p(), splice, advance, enter goaltree for next
-   - hol_cursor_reenter(session) -> Re-enter goaltree after drop() or failure
+   - hol_cursor_reenter(session) -> Re-enter goaltree after drop() or to retry
 
    Registry: dict[str, tuple[HOLSession, datetime, Path]] in-memory only
 
@@ -521,15 +521,15 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 # Build prompt
                 if state.session_id:
                     # Resuming SDK session - agent has context
-                    prompt = initial_prompt or f"Continue. Task: {config.task_file}"
+                    prompt = initial_prompt or "Continue."
                 else:
-                    # New SDK session - need to recover context
-                    prompt = f"Begin. First run hol_start() to check/start HOL session."
+                    # New SDK session - read ## Handoff from system prompt's ## Task section
+                    prompt = "Begin. Check ## Task section above for ## Handoff with current state."
                     if state.hol_session:
-                        prompt += f" Previous session was '{state.hol_session}'."
-                    prompt += f" Then read {config.task_file} for ## Handoff section."
+                        prompt += f" Previous HOL session: '{state.hol_session}'."
+                    prompt += " Start with hol_cursor_init(file) or holmake(workdir)."
                     if initial_prompt:
-                        prompt += f" Initial instruction: {initial_prompt}"
+                        prompt += f" {initial_prompt}"
 
                     large_files = get_large_files(config.working_dir)
                     if large_files:
@@ -638,7 +638,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                         if message.result:
                             print(f"  [RESULT TEXT] {message.result}")
-                        cont = "Continue working. Do not stop until Holmake passes with no cheats. Output PROOF_COMPLETE: <summary> when done."
+                        cont = "Continue. PROOF_COMPLETE when holmake passes with no cheats."
                         print(f"[SEND] {cont}")
                         await client.query(cont)
 
