@@ -31,11 +31,11 @@ Components
    - hol_restart(session) -> Stop + start (preserves workdir)
    - holmake(workdir, target="", timeout=90) -> Run Holmake --qof
 
-   Cursor tools (multi-theorem files):
-   - hol_cursor_init(session, file) -> Parse SML, find cheats, load context
+   Cursor tools (multi-theorem files) - RECOMMENDED entry point:
+   - hol_cursor_init(file, session="default", workdir=None) -> Parse, load, enter goaltree
    - hol_cursor_status(session) -> Position, completed, remaining cheats
-   - hol_cursor_start(session) -> gt `goal`, replay tactics before cheat
-   - hol_cursor_complete(session) -> Extract p(), splice into file, advance
+   - hol_cursor_complete(session) -> Extract p(), splice, advance, enter goaltree for next
+   - hol_cursor_reenter(session) -> Re-enter goaltree after drop() or failure
 
    Registry: dict[str, tuple[HOLSession, datetime, Path]] in-memory only
 
@@ -362,14 +362,14 @@ Terminate session. Usually not needed - sessions survive handoffs.
 Restart session (stop + start, preserves workdir). Use when HOL state is corrupted
 or you need to reload theories after file changes.
 
-### Cursor Tools (for files with multiple theorems)
-Use when a file has several `cheat` placeholders to fill:
-- `hol_cursor_init(session, file)` - Parse file, find all cheats, position at first
+### Cursor Tools (RECOMMENDED for multi-theorem files)
+Use when a file has `cheat` placeholders to fill:
+- `hol_cursor_init(file, session="default", workdir=None)` - Parse file, auto-start session, enter goaltree for first cheat
 - `hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
-- `hol_cursor_start(session)` - Enter goaltree mode for current theorem (runs gt + replays tactics before cheat)
-- `hol_cursor_complete(session)` - Extract proof via p(), splice into file, advance to next cheat
+- `hol_cursor_complete(session)` - Extract proof via p(), splice into file, advance and enter goaltree for next
+- `hol_cursor_reenter(session)` - Re-enter goaltree after drop() or to retry
 
-Cursor workflow: init → (start → prove → complete) × N → done
+Cursor workflow: init → (prove → complete) × N → done
 
 ## Goaltree Mode (Interactive Proving)
 
@@ -397,19 +397,18 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 ## Workflow
 
 1. **Assess**: `holmake(workdir)` to see build state
-2. **Start session**: `hol_start(workdir, "main")` - idempotent, shows current proof state
-3. **Use cursor tools** (PREFERRED for multi-theorem files):
-   - `hol_cursor_init("main", "path/to/file.sml")` - parse file, find all cheats
-   - `hol_cursor_start("main")` - enter goaltree for current theorem
+2. **Start proving** (RECOMMENDED):
+   - `hol_cursor_init("path/to/file.sml")` - auto-starts session, enters goaltree for first cheat
    - Prove interactively with hol_send (etq, p(), backup)
-   - `hol_cursor_complete("main")` - save proof to file, advance to next
+   - `hol_cursor_complete("default")` - saves proof, advances, enters goaltree for next
    - Repeat until all theorems done
-4. **Manual alternative** (for single theorems):
+3. **Manual alternative** (for single theorems or advanced control):
+   - `hol_start(workdir, "main")` - start session explicitly
    - `hol_send("main", 'gt `goal`;')` - enter goaltree
    - `hol_send("main", 'etq "tactic";')` - apply tactic
    - Copy p() output to file manually via Edit
-5. **Verify**: `holmake(workdir)` again
-6. **Iterate**: Until no cheats remain
+4. **Verify**: `holmake(workdir)` again
+5. **Iterate**: Until no cheats remain
 
 ## Critical Rules
 
@@ -426,8 +425,9 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 
 If context seems lost:
 1. Read task file for ## Handoff section
-2. Run hol_start(workdir, name) - idempotent, returns current state
+2. Run hol_cursor_init(file) - auto-starts session, positions at first cheat
 3. Run holmake() to see what's failing
+4. Use hol_cursor_reenter() if you need to retry current theorem after drop()
 
 BEGIN NOW.
 """
@@ -559,7 +559,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                     if new_session_id and state.session_id != new_session_id:
                         state.session_id = new_session_id
-                        print(f"[SESSION] Got ID: {state.session_id}")
+                        print(f"[SESSION] ID: {state.session_id}")
                         state.save()
 
                     # Count assistant messages

@@ -367,27 +367,34 @@ async def hol_logs(workdir: str) -> str:
 
 
 @mcp.tool()
-async def hol_cursor_init(session: str, file: str) -> str:
-    """Initialize cursor for a file with multiple theorems.
+async def hol_cursor_init(file: str, session: str = "default", workdir: str = None) -> str:
+    """Initialize cursor and start proving first theorem.
 
-    Parses the file, finds theorems with cheats, loads HOL context up to
-    the first cheat, and positions the cursor there.
+    Parses file, finds theorems with cheats, loads HOL context, and enters
+    goaltree mode for the first theorem with a cheat.
+
+    Auto-starts HOL session if needed.
 
     Args:
-        session: Session name from hol_start
         file: Path to .sml file containing theorems
+        session: Session name (default: "default")
+        workdir: Working directory for HOL (default: file's parent directory)
 
-    Returns: Status showing current position and theorems found
+    Returns: Status showing current position, theorems found, and current goals
     """
-    s = _get_session(session)
-    if not s:
-        return f"ERROR: Session '{session}' not found."
-    if not s.is_running:
-        return f"ERROR: Session '{session}' is not running."
-
+    # Validate file first
     file_path = Path(file).resolve()
     if not file_path.exists():
         return f"ERROR: File not found: {file}"
+
+    # Auto-start session if needed
+    s = _get_session(session)
+    if not s or not s.is_running:
+        wd = workdir or str(file_path.parent)
+        start_result = await hol_start.fn(workdir=wd, name=session)
+        if start_result.startswith("ERROR"):
+            return start_result
+        s = _get_session(session)
 
     cursor = ProofCursor(file_path, s)
     result = await cursor.initialize()
@@ -406,6 +413,16 @@ async def hol_cursor_init(session: str, file: str) -> str:
 
     if status['current']:
         lines.append(f"Current: {status['current']} (line {status['current_line']})")
+
+        # Enter goaltree for current theorem
+        start_result = await cursor.start_current()
+        goals = await s.send("top_goals();", timeout=10)
+        lines.append("")
+        lines.append(f"=== Proving {status['current']} ===")
+        lines.append(start_result)
+        lines.append("")
+        lines.append("=== Current goals ===")
+        lines.append(goals)
 
     return "\n".join(lines)
 
@@ -435,11 +452,11 @@ async def hol_cursor_status(session: str) -> str:
 
 
 @mcp.tool()
-async def hol_cursor_start(session: str) -> str:
-    """Start proving the current theorem.
+async def hol_cursor_reenter(session: str) -> str:
+    """Re-enter goaltree for current theorem.
 
-    Sets up goaltree mode with the theorem's goal and replays any
-    tactics that come before the cheat.
+    Use after drop() or to retry a failed proof attempt.
+    Does NOT advance to next theorem - just re-enters goaltree for current.
 
     Args:
         session: Session name
@@ -464,15 +481,15 @@ async def hol_cursor_start(session: str) -> str:
 
 @mcp.tool()
 async def hol_cursor_complete(session: str) -> str:
-    """Complete current theorem and advance to next.
+    """Complete current theorem and start proving next.
 
-    Extracts the proof from p(), splices it into the file replacing
-    the cheat, and moves to the next theorem with a cheat.
+    Extracts proof from p(), splices into file replacing cheat,
+    advances to next theorem with cheat, and enters goaltree for it.
 
     Args:
         session: Session name
 
-    Returns: Confirmation and next theorem info
+    Returns: Confirmation, next theorem info, and current goals (if any remain)
     """
     cursor = _cursors.get(session)
     if not cursor:
@@ -493,7 +510,16 @@ async def hol_cursor_complete(session: str) -> str:
     ]
 
     if status['current']:
+        # Enter goaltree for next theorem
+        start_result = await cursor.start_current()
+        goals = await s.send("top_goals();", timeout=10)
         lines.append(f"Next: {status['current']} (line {status['current_line']})")
+        lines.append("")
+        lines.append(f"=== Proving {status['current']} ===")
+        lines.append(start_result)
+        lines.append("")
+        lines.append("=== Current goals ===")
+        lines.append(goals)
     else:
         lines.append("No more theorems with cheats!")
 
