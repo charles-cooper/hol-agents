@@ -44,19 +44,23 @@ def _session_age(name: str) -> str:
 
 @mcp.tool()
 async def hol_start(workdir: str, name: str = "default") -> str:
-    """Start new HOL session.
+    """Start HOL session (idempotent - returns existing if running).
 
     Args:
         workdir: Working directory for HOL (where Holmakefile is)
         name: Session identifier (use simple names like 'main')
 
-    Returns: Confirmation with session name
+    Returns: Session status and current proof state
     """
-    # Check if session already exists
+    # If session exists and is running, return its state
     if name in _sessions:
         session = _sessions[name][0]
         if session.is_running:
-            return f"ERROR: Session '{name}' already running (PID {session.process.pid})"
+            p_out = await session.send("p();", timeout=10)
+            goals = await session.send("top_goals();", timeout=10)
+            return f"Session '{name}' already running.\n\n=== Proof tree ===\n{p_out}\n\n=== Goals ===\n{goals}"
+        # Dead session - clean up
+        del _sessions[name]
 
     # Validate workdir
     workdir_path = Path(workdir).resolve()
@@ -101,27 +105,6 @@ async def hol_sessions() -> str:
 
 
 @mcp.tool()
-async def hol_attach(session: str) -> str:
-    """Attach to existing session. Returns current proof state.
-
-    Args:
-        session: Session name from hol_start
-
-    Returns: Current proof state or error message
-    """
-    s = _get_session(session)
-    if not s:
-        return f"ERROR: Session '{session}' not found. Use hol_start() to create one."
-    if not s.is_running:
-        del _sessions[session]
-        return f"ERROR: Session '{session}' died. Use hol_start() to create a new one."
-
-    # Get current state
-    state = await s.send("p();", timeout=10)
-    return f"Attached to '{session}'.\n\nCurrent state:\n{state}"
-
-
-@mcp.tool()
 async def hol_send(session: str, command: str, timeout: int = 120) -> str:
     """Send SML code to HOL.
 
@@ -147,32 +130,6 @@ async def hol_send(session: str, command: str, timeout: int = 120) -> str:
         timeout = 600
 
     return await s.send(command, timeout=timeout)
-
-
-@mcp.tool()
-async def hol_proof_state(session: str) -> str:
-    """Get current proof state - runs p() and top_goals().
-
-    Args:
-        session: Session name from hol_start
-
-    Returns: Current goals and proof tree state
-    """
-    s = _get_session(session)
-    if not s:
-        return f"ERROR: Session '{session}' not found."
-
-    if not s.is_running:
-        del _sessions[session]
-        return f"ERROR: Session '{session}' died."
-
-    # Get p() output (proof tree status)
-    p_result = await s.send("p();", timeout=10)
-
-    # Get top_goals() for detailed goal info
-    goals_result = await s.send("top_goals();", timeout=10)
-
-    return f"=== Proof tree (p()) ===\n{p_result}\n\n=== Current goals (top_goals()) ===\n{goals_result}"
 
 
 @mcp.tool()

@@ -182,6 +182,7 @@ class AgentConfig:
     model: str = "claude-opus-4-20250514"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 100
+    fresh: bool = False
 
     @property
     def state_path(self) -> str:
@@ -264,14 +265,12 @@ When complete, output "PROOF_COMPLETE:" followed by a summary.
 You have access to HOL4 tools via MCP. Use these instead of Bash for HOL interaction:
 
 ### Session Management
-- `hol_start(workdir, name)` - Start new HOL session
+- `hol_start(workdir, name)` - Start HOL session (idempotent - reuses existing)
 - `hol_sessions()` - List all active sessions
-- `hol_attach(session)` - Attach to existing session
 - `hol_stop(session)` - Terminate session
 
 ### HOL Interaction
 - `hol_send(session, command, timeout)` - Send SML code to HOL
-- `hol_proof_state(session)` - Get current goals (runs p() and top_goals())
 - `hol_interrupt(session)` - Abort runaway tactic (SIGINT)
 - `holmake(workdir, target)` - Run Holmake --qof
 
@@ -283,12 +282,11 @@ You have access to HOL4 tools via MCP. Use these instead of Bash for HOL interac
 
 ### Typical Workflow
 ```
-1. hol_start(workdir="/path/to/proofs", name="main")
+1. hol_start(workdir="/path/to/proofs", name="main")  # Idempotent, returns state
 2. hol_send(session="main", command='open fooTheory;')
 3. hol_send(session="main", command='gt `goal`;')
 4. hol_send(session="main", command='etq "tactic";')
-5. hol_proof_state(session="main")  # Check progress
-6. holmake(workdir="/path/to/proofs")  # Verify
+5. holmake(workdir="/path/to/proofs")  # Verify
 ```
 
 ## Goaltree Mode (Interactive Proving)
@@ -341,9 +339,8 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 
 If context seems lost:
 1. Read task file for ## Handoff section
-2. Run hol_sessions() to see what's running
-3. If session exists, hol_proof_state() to check state
-4. Run holmake() to see what's failing
+2. Run hol_start(workdir, name) - idempotent, returns current state
+3. Run holmake() to see what's failing
 
 BEGIN NOW.
 """
@@ -363,8 +360,12 @@ def print_message_blocks(message, prefix="  ") -> list[str]:
             elif hasattr(block, 'tool_use_id'):
                 content = getattr(block, 'content', None)
                 if content:
-                    content = content if isinstance(content, str) else str(content)
-                    print(f"{prefix}[TOOL OUTPUT] {content[:500]}")
+                    # Extract result string from MCP response
+                    if isinstance(content, dict) and 'result' in content:
+                        text = content['result']
+                    else:
+                        text = content
+                    print(f"{prefix}[TOOL OUTPUT]\n{text}")
                 else:
                     print(f"{prefix}[TOOL OUTPUT] (none)")
             elif hasattr(block, 'text') and block.text:
@@ -420,8 +421,12 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
         print(f"\n{'='*60}")
         if session_id:
             print(f"[SESSION] Resuming {session_id}")
+        elif message_count > 0:
+            print(f"[SESSION] New context (continuing from msg {message_count})")
+        elif config.fresh:
+            print(f"[SESSION] Fresh start")
         else:
-            print(f"[SESSION] Starting new session")
+            print(f"[SESSION] Starting")
         print(f"{'='*60}")
 
         try:
@@ -440,13 +445,13 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 if session_id:
                     prompt = initial_prompt or f"Continue. Task: {config.task_file}"
                     if hol_session:
-                        prompt += f" HOL session '{hol_session}' may still be running - check with hol_sessions()."
+                        prompt += f" HOL session '{hol_session}' may still be running - use hol_start() to reconnect."
                 else:
                     prompt = f"Begin. Read {config.task_file} for ## Handoff section."
                     if initial_prompt:
                         prompt = f"{prompt} Initial instruction: {initial_prompt}"
                     if hol_session:
-                        prompt += f" Previous HOL session: '{hol_session}' - check hol_sessions() to see if it's still running."
+                        prompt += f" Previous HOL session '{hol_session}' - use hol_start() to reconnect (it's idempotent)."
 
                     large_files = get_large_files(config.working_dir)
                     if large_files:
@@ -495,12 +500,13 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                                 os.remove(state_path)
                             return True
 
-                        # Track HOL session name from hol_start output
-                        if "Session '" in text and "' started" in text:
-                            match = re.search(r"Session '(\w+)' started", text)
-                            if match:
+                        # Track HOL session name from hol_start or hol_attach output
+                        if "Session '" in text or "session '" in text:
+                            # Match: Session 'X' started, Attached to session 'X', etc.
+                            match = re.search(r"[Ss]ession '(\w+)'", text)
+                            if match and match.group(1) != hol_session:
                                 hol_session = match.group(1)
-                                print(f"[HOL] Session started: {hol_session}")
+                                print(f"[HOL] Session: {hol_session}")
 
                     # Check message limit
                     if session_message_count >= config.max_agent_messages:
@@ -509,15 +515,12 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         handoff_prompt = (
                             "STOP. Context clearing now. "
                             "1) Commit progress if substantial (git add specific files only, never -A). "
-                            "2) Run hol_proof_state() to capture current state. "
-                            "3) Update task file with ## Handoff section: "
-                            "   - Working directory, git branch "
-                            "   - HOL session name (for hol_attach) "
+                            "2) Update task file with ## Handoff section: "
+                            "   - Working directory, git branch, HOL session name "
                             "   - What you tried, what worked "
-                            "   - Current proof state "
                             "   - What to try next "
-                            "4) DO NOT stop the HOL session - leave it running. "
-                            "5) STOP after updating task file."
+                            "3) DO NOT stop the HOL session - leave it running. "
+                            "4) STOP after updating task file."
                         )
 
                         await client.query(handoff_prompt)
@@ -628,6 +631,7 @@ def main():
         claude_md=claude_md or "",
         model=args.model,
         max_agent_messages=args.max_messages,
+        fresh=args.fresh,
     )
 
     if args.fresh and os.path.exists(config.state_path):
