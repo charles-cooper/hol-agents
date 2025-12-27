@@ -525,6 +525,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         file_list = ", ".join(f"{f} ({n} lines)" for f, n in large_files[:5])
                         prompt += f" WARNING: Large files: {file_list}"
 
+                print(f"[SEND] {prompt}")
                 await client.query(prompt)
 
                 # Capture session ID and save immediately
@@ -594,6 +595,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "5) STOP after updating task file."
                         )
 
+                        print(f"[SEND] {handoff_prompt}")
                         await client.query(handoff_prompt)
                         async for msg in client.receive_response():
                             print_message_blocks(msg, prefix="  [HANDOFF] ")
@@ -619,7 +621,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                         if message.result:
                             print(f"  [RESULT TEXT] {message.result}")
-                        await client.query("Continue working. Do not stop until Holmake passes with no cheats. Output PROOF_COMPLETE: <summary> when done.")
+                        cont = "Continue working. Do not stop until Holmake passes with no cheats. Output PROOF_COMPLETE: <summary> when done."
+                        print(f"[SEND] {cont}")
+                        await client.query(cont)
 
             error_count = 0
 
@@ -643,6 +647,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         can_use_tool=tool_permission,
                     )
                     async with ClaudeSDKClient(opts) as client:
+                        print(f"[SEND] {user_input}")
                         await client.query(user_input)
                         async for msg in client.receive_response():
                             print_message_blocks(msg)
