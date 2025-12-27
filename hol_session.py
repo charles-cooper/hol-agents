@@ -27,6 +27,10 @@ class HOLSession:
             str(HOLDIR / "bin" / "hol"), "--zero",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
+            # Merge stderr to stdout: HOL's interactive mode sends all output
+            # (warnings, errors, proof state) to stdout. Stderr is empty in
+            # practice - only batch tools use it. Merging preserves ordering
+            # with null-byte framing.
             stderr=asyncio.subprocess.STDOUT,
             cwd=self.workdir,
             start_new_session=True,  # New process group for clean kill
