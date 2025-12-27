@@ -255,6 +255,8 @@ def build_system_prompt(config: AgentConfig) -> str:
 
     return f"""You are an autonomous HOL4 theorem proving agent. You run FOREVER until the proof is complete.
 
+You have {config.max_agent_messages} assistant messages before context is cleared (handoff). Each response you send counts as one message, regardless of user input. Plan accordingly - make steady progress and document state before handoff.
+
 ## Complexity Management
 
 **Never work with >100 lines of visible state.** If goals exceed this:
