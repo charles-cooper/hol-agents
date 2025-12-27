@@ -103,12 +103,12 @@ async def hol_start(workdir: str, name: str = "default") -> str:
 
 @mcp.tool()
 async def hol_sessions() -> str:
-    """List all active HOL sessions with their workdir, age, status."""
+    """List all active HOL sessions with their workdir, age, status, cursor."""
     if not _sessions:
         return "No active sessions."
 
-    lines = ["SESSION      WORKDIR                                    AGE     STATUS"]
-    lines.append("-" * 75)
+    lines = ["SESSION      WORKDIR                                    AGE     STATUS   CURSOR"]
+    lines.append("-" * 95)
 
     for name, entry in _sessions.items():
         status = "running" if entry.session.is_running else "dead"
@@ -116,7 +116,15 @@ async def hol_sessions() -> str:
         workdir_str = str(entry.workdir)
         if len(workdir_str) > 40:
             workdir_str = "..." + workdir_str[-37:]
-        lines.append(f"{name:<12} {workdir_str:<42} {age:<7} {status}")
+
+        # Cursor info
+        if entry.cursor:
+            cs = entry.cursor.status
+            cursor_str = f"{cs['current']} ({cs['position']})" if cs['current'] else "(none)"
+        else:
+            cursor_str = "(none)"
+
+        lines.append(f"{name:<12} {workdir_str:<42} {age:<7} {status:<8} {cursor_str}")
 
     return "\n".join(lines)
 
