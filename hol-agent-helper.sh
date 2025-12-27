@@ -176,8 +176,8 @@ start_hol() {
             LOG="$log"
             PIDFILE="$pidfile"
 
-            # Load etq (goaltree helper) from skills directory
-            local etq_file="$SCRIPT_DIR/etq.sml"
+            # Load etq (goaltree helper)
+            local etq_file="$SCRIPT_DIR/sml_helpers/etq.sml"
             if [ -f "$etq_file" ]; then
                 echo "Loading etq.sml..."
                 send_file "$etq_file"

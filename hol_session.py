@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 HOLDIR = Path(os.environ.get("HOLDIR", Path.home() / "HOL"))
-ETQ_PATH = Path(__file__).parent / "skills" / "hol" / "scripts" / "etq.sml"
+ETQ_PATH = Path(__file__).parent / "sml_helpers" / "etq.sml"
 
 
 class HOLSession:
@@ -40,8 +40,7 @@ class HOLSession:
         output = await self._read_until_null(timeout=60)
 
         # Load etq.sml (goaltree mode helpers)
-        if ETQ_PATH.exists():
-            await self.send(ETQ_PATH.read_text(), timeout=30)
+        await self.send(ETQ_PATH.read_text(), timeout=30)
 
         # Load .hol_init.sml if present
         init_file = self.workdir / ".hol_init.sml"
