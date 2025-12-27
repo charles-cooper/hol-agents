@@ -187,6 +187,40 @@ class AgentConfig:
         return os.path.join(self.working_dir, ".claude", "hol_agent_state.json")
 
 
+@dataclass
+class AgentState:
+    """Persisted agent state for resume."""
+    path: str
+    session_id: Optional[str] = None
+    message_count: int = 0
+    session_message_count: int = 0
+    hol_session: Optional[str] = None
+
+    def save(self) -> None:
+        with open(self.path, 'w') as f:
+            json.dump({
+                "session_id": self.session_id,
+                "message_count": self.message_count,
+                "session_message_count": self.session_message_count,
+                "hol_session": self.hol_session,
+            }, f)
+
+    @classmethod
+    def load(cls, path: str) -> "AgentState":
+        try:
+            with open(path) as f:
+                data = json.load(f)
+                return cls(
+                    path=path,
+                    session_id=data.get("session_id"),
+                    message_count=data.get("message_count", 0),
+                    session_message_count=data.get("session_message_count", 0),
+                    hol_session=data.get("hol_session"),
+                )
+        except Exception:
+            return cls(path=path)
+
+
 def read_file(path: str) -> str:
     """Read a file, return empty string on error."""
     try:
@@ -405,41 +439,19 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
     system_prompt = build_system_prompt(config)
     error_count = 0
-    message_count = 0
-    session_id = None
-    state_path = config.state_path
-    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+    os.makedirs(os.path.dirname(config.state_path), exist_ok=True)
 
-    # Load previous state if exists
-    session_message_count = 0
-    hol_session = None
-    if os.path.exists(state_path):
-        try:
-            with open(state_path) as f:
-                state = json.load(f)
-                session_id = state.get("session_id")
-                message_count = state.get("message_count", 0)
-                session_message_count = state.get("session_message_count", 0)
-                hol_session = state.get("hol_session")
-                if session_id:
-                    print(f"[RESUME] Session {session_id} ({session_message_count}/{config.max_agent_messages})")
-                if hol_session:
-                    print(f"[RESUME] HOL session: {hol_session}")
-        except Exception:
-            pass
+    # Load previous state
+    state = AgentState.load(config.state_path)
 
     print(f"[AGENT] Starting (handoff every {config.max_agent_messages} messages)...")
 
     while True:
         print(f"\n{'='*60}")
-        if session_id:
-            print(f"[SESSION] Resuming {session_id}")
-        elif message_count > 0:
-            print(f"[SESSION] New context (continuing from msg {message_count})")
-        elif config.fresh:
-            print(f"[SESSION] Fresh start")
+        if state.session_id:
+            print(f"[SESSION] Resuming {state.session_id}")
         else:
-            print(f"[SESSION] Starting")
+            print(f"[SESSION] Starting new session")
         print(f"{'='*60}")
 
         try:
@@ -449,20 +461,20 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 system_prompt=system_prompt,
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "mcp__hol__*"],
                 mcp_servers=MCP_SERVER_CONFIG,
-                resume=session_id,
+                resume=state.session_id,
                 can_use_tool=tool_permission,
             )
 
             async with ClaudeSDKClient(opts) as client:
                 # Build prompt
-                if session_id:
+                if state.session_id:
                     # Resuming SDK session - agent has context
                     prompt = initial_prompt or f"Continue. Task: {config.task_file}"
                 else:
                     # New SDK session - need to recover context
                     prompt = f"Begin. First run hol_start() to check/start HOL session."
-                    if hol_session:
-                        prompt += f" Previous session was '{hol_session}'."
+                    if state.hol_session:
+                        prompt += f" Previous session was '{state.hol_session}'."
                     prompt += f" Then read {config.task_file} for ## Handoff section."
                     if initial_prompt:
                         prompt += f" Initial instruction: {initial_prompt}"
@@ -474,35 +486,34 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                 await client.query(prompt)
 
-                # Capture session ID
-                if hasattr(client, 'session_id') and client.session_id and client.session_id != session_id:
-                    session_id = client.session_id
-                    print(f"[SESSION] Got ID: {session_id}")
+                # Capture session ID and save immediately
+                if hasattr(client, 'session_id') and client.session_id and client.session_id != state.session_id:
+                    state.session_id = client.session_id
+                    print(f"[SESSION] ID: {state.session_id}")
+                    state.save()
 
                 # Process messages
                 async for message in client.receive_messages():
                     msg_type = type(message).__name__
 
-                    # Capture session_id
+                    # Capture session_id from multiple sources
+                    new_session_id = None
                     if hasattr(message, 'session_id') and message.session_id:
-                        if session_id != message.session_id:
-                            session_id = message.session_id
-                            print(f"[SESSION] Got ID: {session_id}")
+                        new_session_id = message.session_id
+                    elif msg_type == "SystemMessage" and hasattr(message, 'data') and isinstance(message.data, dict):
+                        new_session_id = message.data.get('session_id')
+
+                    if new_session_id and state.session_id != new_session_id:
+                        state.session_id = new_session_id
+                        print(f"[SESSION] Got ID: {state.session_id}")
+                        state.save()
 
                     # Count assistant messages
                     if msg_type == "AssistantMessage":
-                        session_message_count += 1
-                        message_count += 1
-                        print(f"[MSG {session_message_count}/{config.max_agent_messages}] (total: {message_count})")
-
-                        # Save state
-                        with open(state_path, 'w') as f:
-                            json.dump({
-                                "session_id": session_id,
-                                "message_count": message_count,
-                                "session_message_count": session_message_count,
-                                "hol_session": hol_session,
-                            }, f)
+                        state.session_message_count += 1
+                        state.message_count += 1
+                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}] (total: {state.message_count})")
+                        state.save()
 
                     # Log and check for completion
                     texts = print_message_blocks(message)
@@ -510,20 +521,20 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         if "PROOF_COMPLETE:" in text:
                             summary = text.split("PROOF_COMPLETE:")[-1].strip()
                             print(f"\n[COMPLETE] {summary}")
-                            if os.path.exists(state_path):
-                                os.remove(state_path)
+                            if os.path.exists(state.path):
+                                os.remove(state.path)
                             return True
 
                         # Track HOL session name from hol_start output
                         if "Session '" in text or "session '" in text:
                             # Match: Session 'X' started, Attached to session 'X', etc.
                             match = re.search(r"[Ss]ession '(\w+)'", text)
-                            if match and match.group(1) != hol_session:
-                                hol_session = match.group(1)
-                                print(f"[HOL] Session: {hol_session}")
+                            if match and match.group(1) != state.hol_session:
+                                state.hol_session = match.group(1)
+                                print(f"[HOL] Session: {state.hol_session}")
 
                     # Check message limit
-                    if session_message_count >= config.max_agent_messages:
+                    if state.session_message_count >= config.max_agent_messages:
                         print(f"\n[HANDOFF] Reached {config.max_agent_messages} messages...")
 
                         handoff_prompt = (
@@ -547,16 +558,10 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         print(f"[HANDOFF] Agent updated task file")
 
                         # Clear SDK session to force fresh context, but preserve HOL session
-                        session_id = None
-                        session_message_count = 0
-                        with open(state_path, 'w') as f:
-                            json.dump({
-                                "session_id": None,
-                                "message_count": message_count,
-                                "session_message_count": 0,
-                                "hol_session": hol_session,
-                            }, f)
-                        print(f"[HANDOFF] Cleared SDK session, {message_count} total, HOL '{hol_session}'")
+                        state.session_id = None
+                        state.session_message_count = 0
+                        state.save()
+                        print(f"[HANDOFF] Cleared SDK session, {state.message_count} total, HOL '{state.hol_session}'")
                         break
 
                     # Result message - send continue prompt
@@ -569,13 +574,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
             error_count = 0
 
         except KeyboardInterrupt:
-            with open(state_path, 'w') as f:
-                json.dump({
-                    "session_id": session_id,
-                    "message_count": message_count,
-                    "session_message_count": session_message_count,
-                    "hol_session": hol_session,
-                }, f)
+            state.save()
             print(f"\n[INTERRUPT] State saved")
             print("  Enter message for Claude, 'q' to quit, empty to continue")
             try:
@@ -589,7 +588,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         system_prompt=system_prompt,
                         allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "mcp__hol__*"],
                         mcp_servers=MCP_SERVER_CONFIG,
-                        resume=session_id,
+                        resume=state.session_id,
                         can_use_tool=tool_permission,
                     )
                     async with ClaudeSDKClient(opts) as client:
