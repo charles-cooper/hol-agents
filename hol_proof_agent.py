@@ -23,11 +23,9 @@ Components
 ----------
 1. hol_mcp_server.py (FastMCP)
    Tools (all take session:str):
-   - hol_start(workdir, name) -> Start HOL subprocess with --zero flag
+   - hol_start(workdir, name) -> Start or reconnect HOL session (idempotent, returns p() + top_goals())
    - hol_sessions() -> List active sessions (name, workdir, age, status)
-   - hol_attach(session) -> Attach to existing, return proof state
    - hol_send(session, command, timeout=120) -> Send SML, return output
-   - hol_proof_state(session) -> Run p() + top_goals(), return formatted
    - hol_interrupt(session) -> SIGINT to process group
    - hol_stop(session) -> SIGTERM + wait
    - holmake(workdir, target="") -> Run Holmake --qof
@@ -77,7 +75,7 @@ Components
 
    Handoff prompt must include:
    - Commit progress (git add specific files only, never -A)
-   - Run hol_proof_state() to capture goals
+   - Run hol_start() to capture proof state
    - Update task file ## Handoff section with: workdir, branch, hol session name,
      what tried, what worked, current state, next steps
    - DO NOT stop HOL session
@@ -92,7 +90,7 @@ Components
    - Goaltree mode: gt, etq, p(), backup(), top_goals(), drop()
    - Subgoal patterns: by, sg, suffices_by
    - Workflow: assess -> identify cheats -> debug interactively -> update file -> verify
-   - Recovery: read task file, hol_sessions(), hol_proof_state(), holmake()
+   - Recovery: read task file, hol_start() to reconnect, holmake()
 
 Dependencies: fastmcp>=2.0.0, claude-agent-sdk>=0.1.0
 
@@ -265,7 +263,7 @@ When complete, output "PROOF_COMPLETE:" followed by a summary.
 You have access to HOL4 tools via MCP. Use these instead of Bash for HOL interaction:
 
 ### Session Management
-- `hol_start(workdir, name)` - Start HOL session (idempotent - reuses existing)
+- `hol_start(workdir, name)` - Start or reconnect to HOL session. Idempotent: if session exists, returns current proof state (p() + top_goals())
 - `hol_sessions()` - List all active sessions
 - `hol_stop(session)` - Terminate session
 
@@ -510,7 +508,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                                 os.remove(state_path)
                             return True
 
-                        # Track HOL session name from hol_start or hol_attach output
+                        # Track HOL session name from hol_start output
                         if "Session '" in text or "session '" in text:
                             # Match: Session 'X' started, Attached to session 'X', etc.
                             match = re.search(r"[Ss]ession '(\w+)'", text)

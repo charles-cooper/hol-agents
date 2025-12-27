@@ -34,14 +34,12 @@ python hol_proof_agent.py --task path/to/TASK_foo.md
 ## MCP Tools
 
 ### Session Management
-- `hol_start(workdir, name)` - Start new HOL session
+- `hol_start(workdir, name)` - Start or reconnect HOL session (idempotent, returns p() + top_goals())
 - `hol_sessions()` - List active sessions
-- `hol_attach(session)` - Attach to existing session
 - `hol_stop(session)` - Terminate session
 
 ### HOL Interaction
 - `hol_send(session, command, timeout)` - Send SML code
-- `hol_proof_state(session)` - Get current goals (p() + top_goals())
 - `hol_interrupt(session)` - Abort runaway tactic (SIGINT)
 - `holmake(workdir, target)` - Run Holmake --qof
 
@@ -73,7 +71,7 @@ Sessions are **in-memory only**:
 
 At `--max-messages` threshold:
 1. Agent commits progress (git add specific files)
-2. Captures proof state via `hol_proof_state()`
+2. Runs `hol_start()` to capture proof state (p() + top_goals())
 3. Updates task file with `## Handoff` section
 4. Clears Claude session (new context)
 5. Same MCP server continues → HOL session preserved
