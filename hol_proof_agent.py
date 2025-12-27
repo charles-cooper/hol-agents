@@ -348,7 +348,7 @@ List active sessions with workdir, age, status.
 Restart session (stop + start, preserves workdir). Use when HOL state is corrupted.
 
 ### Cursor Tools (RECOMMENDED entry point)
-- `{mcp}hol_cursor_init(file, session="default", workdir=None)` - Auto-start session, parse file, enter goaltree
+- `{mcp}hol_cursor_init(file, session="default", workdir=None)` - Auto-start session, parse file, enter goaltree and show output of top_goals()
 - `{mcp}hol_cursor_complete(session)` - Extract p(), splice into file, advance, enter goaltree for next
 - `{mcp}hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
 - `{mcp}hol_cursor_reenter(session)` - Re-enter goaltree after drop() or to retry
