@@ -336,6 +336,8 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 4. `gvs[AllCaseEqs()]` can be too aggressive - sometimes `fs[]` or `simp[]` is better
 5. For induction, make sure IH is applicable (check variable names)
 6. If tactic runs >15 seconds, use hol_interrupt and try different approach
+7. NEVER delete working proof code - if adding cheat, comment out original proof first
+8. Periodically clean task file: delete outdated handoffs, stale notes, superseded info
 
 ## Recovery
 
