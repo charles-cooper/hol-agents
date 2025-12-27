@@ -119,6 +119,7 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     PermissionResultAllow,
     PermissionResultDeny,
+    ResultMessage,
 )
 
 
@@ -530,6 +531,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 # Process messages
                 async for message in client.receive_messages():
                     msg_type = type(message).__name__
+                    print(f"  [MSG TYPE] {msg_type}")
 
                     # Capture session_id from multiple sources
                     new_session_id = None
@@ -601,17 +603,17 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         break
 
                     # Result message - capture usage and send continue prompt
-                    if hasattr(message, 'result'):
+                    if isinstance(message, ResultMessage):
                         # Capture usage if available
-                        if hasattr(message, 'usage') and message.usage:
-                            cost = getattr(message, 'total_cost_usd', 0.0) or 0.0
+                        print(f"  [RESULT] usage={message.usage}, cost={message.total_cost_usd}")
+                        if message.usage:
+                            cost = message.total_cost_usd or 0.0
                             state.add_usage(message.usage, cost)
                             print(f"  [USAGE] {state.usage_summary()}")
                             state.save()
 
-                        result = message.result or ""
-                        if result:
-                            print(f"  [RESULT] {result}")
+                        if message.result:
+                            print(f"  [RESULT TEXT] {message.result}")
                         await client.query("Continue working. Do not stop until Holmake passes with no cheats. Output PROOF_COMPLETE: <summary> when done.")
 
             error_count = 0
