@@ -360,11 +360,14 @@ def print_message_blocks(message, prefix="  ") -> list[str]:
             elif hasattr(block, 'tool_use_id'):
                 content = getattr(block, 'content', None)
                 if content:
-                    # Extract result string from MCP response
-                    if isinstance(content, dict) and 'result' in content:
-                        text = content['result']
-                    else:
+                    # ToolResultBlock.content is str | list[dict] | None
+                    if isinstance(content, str):
                         text = content
+                    elif isinstance(content, list):
+                        # MCP returns [{"type": "text", "text": "..."}]
+                        text = '\n'.join(item.get('text', str(item)) for item in content)
+                    else:
+                        text = str(content)
                     print(f"{prefix}[TOOL OUTPUT]\n{text}")
                 else:
                     print(f"{prefix}[TOOL OUTPUT] (none)")
