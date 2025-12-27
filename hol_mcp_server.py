@@ -73,9 +73,8 @@ async def hol_start(workdir: str, name: str = "default") -> str:
     if name in _sessions:
         session = _sessions[name].session
         if session.is_running:
-            p_out = await session.send("p();", timeout=10)
             goals = await session.send("top_goals();", timeout=10)
-            return f"Session '{name}' already running.\n\n=== Proof tree ===\n{p_out}\n\n=== Goals ===\n{goals}"
+            return f"Session '{name}' already running.\n\n=== Goals ===\n{goals}"
         # Dead session - clean up
         del _sessions[name]
 

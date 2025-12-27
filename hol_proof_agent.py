@@ -23,7 +23,7 @@ Components
 ----------
 1. hol_mcp_server.py (FastMCP)
    Tools (all take session:str):
-   - hol_start(workdir, name) -> Start or reconnect HOL session (idempotent, returns p() + top_goals())
+   - hol_start(workdir, name) -> Start or reconnect HOL session (idempotent, returns top_goals())
    - hol_sessions() -> List active sessions (name, workdir, age, status)
    - hol_send(session, command, timeout=5) -> Send SML, return output
    - hol_interrupt(session) -> SIGINT to process group
@@ -77,7 +77,7 @@ Components
    Handoff prompt must include:
    - Commit progress (git add specific files only, never -A)
    - Update task file ## Handoff section with: what tried, what worked, next steps
-     (p()/goals/holmake are auto-injected at startup)
+     (goals/holmake are auto-injected at startup)
    - DO NOT stop HOL session
 
    Interrupt handling: Ctrl+C -> save state, prompt for input, 'q' to quit
@@ -330,7 +330,7 @@ When complete, output "PROOF_COMPLETE:" followed by a summary.
 All HOL interaction via MCP tools (prefix: `{mcp}`). **Never use Bash for HOL.**
 
 ### {mcp}hol_start(workdir: str, name: str = "default") -> str
-Start or reconnect HOL session. **Idempotent**: if session exists, returns p() + top_goals().
+Start or reconnect HOL session. **Idempotent**: if session exists, returns top_goals().
 
 ### {mcp}hol_send(session: str, command: str, timeout: int = 5) -> str
 Send SML to HOL. Returns output. Max timeout 600s.
@@ -533,12 +533,10 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             hol_state += f"\n[auto] Session '{state.hol_session}' died. Restart: hol_start(\"{workdir}\")"
                         else:
                             try:
-                                p_out = await hol_send.fn(state.hol_session, "p();", timeout=10)
                                 goals = await hol_send.fn(state.hol_session, "top_goals();", timeout=10)
-                                hol_state += f"\n[auto] hol_send(\"{state.hol_session}\", \"p();\"):\n{p_out}\n"
                                 hol_state += f"\n[auto] hol_send(\"{state.hol_session}\", \"top_goals();\"):\n{goals}"
                             except Exception as e:
-                                hol_state += f"\n[auto] p()/top_goals() error: {e}. Try hol_interrupt() or hol_restart()."
+                                hol_state += f"\n[auto] top_goals() error: {e}. Try hol_interrupt() or hol_restart()."
 
                         if entry.cursor:
                             status = entry.cursor.status
@@ -645,7 +643,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "work immediately. Include: "
                             "   - What you tried, what worked "
                             "   - What to try next (be specific - this is your only memory) "
-                            "   (p()/goals/holmake are auto-injected at startup) "
+                            "   (goals/holmake are auto-injected at startup)"
                             "3) Leave HOL session running. "
                             "4) STOP after updating task file."
                         )
