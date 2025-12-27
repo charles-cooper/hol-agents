@@ -180,7 +180,7 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
     Args:
         workdir: Directory containing Holmakefile
         target: Optional specific target to build
-        env: Optional environment variables (e.g. {"MYVAR": "/path/to/myval"})
+        env: Optional environment variables (e.g. {"MY_VAR": "/some/path"})
         log_limit: Max bytes per log file to include on failure (default 1024)
 
     Returns: Holmake output (stdout + stderr). On failure, includes recent build logs.

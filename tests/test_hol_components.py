@@ -175,7 +175,7 @@ def test_is_allowed_command():
 
     # Should block - use holmake MCP tool instead
     assert not is_allowed_command('Holmake')
-    assert not is_allowed_command('MYVAR=/path Holmake')
+    assert not is_allowed_command('FOO=/path Holmake')
 
     # Should block - dangerous commands
     assert not is_allowed_command('rm -rf /')
