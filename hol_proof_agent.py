@@ -390,12 +390,16 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 
 1. **Assess**: `holmake(workdir)` to see build state
 2. **Start session**: `hol_start(workdir, "main")` - idempotent, shows current proof state
-3. **Debug interactively**:
+3. **Use cursor tools** (PREFERRED for multi-theorem files):
+   - `hol_cursor_init("main", "path/to/file.sml")` - parse file, find all cheats
+   - `hol_cursor_start("main")` - enter goaltree for current theorem
+   - Prove interactively with hol_send (etq, p(), backup)
+   - `hol_cursor_complete("main")` - save proof to file, advance to next
+   - Repeat until all theorems done
+4. **Manual alternative** (for single theorems):
    - `hol_send("main", 'gt `goal`;')` - enter goaltree
    - `hol_send("main", 'etq "tactic";')` - apply tactic
-   - `hol_send("main", 'p();')` - check proof tree
-   - `hol_send("main", 'backup();')` - undo mistake
-4. **Update file**: Copy tactic script from p() into Theorem block
+   - Copy p() output to file manually via Edit
 5. **Verify**: `holmake(workdir)` again
 6. **Iterate**: Until no cheats remain
 
