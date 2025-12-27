@@ -165,6 +165,7 @@ async def tool_permission(tool_name: str, tool_input: dict, agent_context) -> Pe
     cmd = tool_input.get("command", "")
     if is_allowed_command(cmd):
         return PermissionResultAllow()
+    print(f"  [DENIED] Bash: {cmd}")
     return PermissionResultDeny("Bash restricted. Use MCP tools for HOL interaction.")
 
 
