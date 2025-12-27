@@ -122,6 +122,9 @@ from claude_agent_sdk import (
     ResultMessage,
 )
 
+# Import MCP server instance - allows HOL sessions to persist across handoffs
+from hol_mcp_server import mcp as hol_mcp
+
 
 # =============================================================================
 # Bash Restriction
@@ -466,11 +469,14 @@ def print_message_blocks(message, prefix="  ") -> list[str]:
 # Agent
 # =============================================================================
 
-# MCP server configuration
+# MCP server configuration - use SDK-managed instance for persistence across handoffs
+# With type "sdk", the SDK uses our MCP instance but doesn't manage its lifecycle.
+# This allows HOL sessions to survive when we exit/recreate SDK clients at handoff.
 MCP_SERVER_CONFIG = {
     "hol": {
-        "command": sys.executable,
-        "args": [str(Path(__file__).parent / "hol_mcp_server.py")],
+        "type": "sdk",
+        "name": "hol",
+        "instance": hol_mcp._mcp_server,
     }
 }
 
