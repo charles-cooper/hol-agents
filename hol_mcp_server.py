@@ -6,6 +6,7 @@ Sessions are in-memory only. They survive within a single MCP server lifetime
 """
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -15,15 +16,24 @@ from fastmcp import FastMCP
 from hol_session import HOLSession, HOLDIR
 from hol_cursor import ProofCursor
 
+
+@dataclass
+class SessionEntry:
+    """Registry entry for a HOL session."""
+    session: HOLSession
+    started: datetime
+    workdir: Path
+
+
 mcp = FastMCP("hol")
-_sessions: dict[str, tuple[HOLSession, datetime, Path]] = {}  # name -> (session, started, workdir)
+_sessions: dict[str, SessionEntry] = {}
 _cursors: dict[str, ProofCursor] = {}  # session_name -> cursor
 
 
 def _get_session(name: str) -> Optional[HOLSession]:
     """Get session from registry, or None if not found."""
     entry = _sessions.get(name)
-    return entry[0] if entry else None
+    return entry.session if entry else None
 
 
 def _session_age(name: str) -> str:
@@ -31,7 +41,7 @@ def _session_age(name: str) -> str:
     entry = _sessions.get(name)
     if not entry:
         return "unknown"
-    started = entry[1]
+    started = entry.started
     delta = datetime.now() - started
     secs = int(delta.total_seconds())
     if secs < 60:
@@ -54,7 +64,7 @@ async def hol_start(workdir: str, name: str = "default") -> str:
     """
     # If session exists and is running, return its state
     if name in _sessions:
-        session = _sessions[name][0]
+        session = _sessions[name].session
         if session.is_running:
             p_out = await session.send("p();", timeout=10)
             goals = await session.send("top_goals();", timeout=10)
@@ -79,7 +89,7 @@ async def hol_start(workdir: str, name: str = "default") -> str:
         return f"ERROR: HOL failed to start. Output: {result}"
 
     # Register session
-    _sessions[name] = (session, datetime.now(), workdir_path)
+    _sessions[name] = SessionEntry(session, datetime.now(), workdir_path)
 
     return f"Session '{name}' started. {result}\nWorkdir: {workdir_path}"
 
@@ -93,10 +103,10 @@ async def hol_sessions() -> str:
     lines = ["SESSION      WORKDIR                                    AGE     STATUS"]
     lines.append("-" * 75)
 
-    for name, (session, started, workdir) in _sessions.items():
-        status = "running" if session.is_running else "dead"
+    for name, entry in _sessions.items():
+        status = "running" if entry.session.is_running else "dead"
         age = _session_age(name)
-        workdir_str = str(workdir)
+        workdir_str = str(entry.workdir)
         if len(workdir_str) > 40:
             workdir_str = "..." + workdir_str[-37:]
         lines.append(f"{name:<12} {workdir_str:<42} {age:<7} {status}")
@@ -168,7 +178,7 @@ async def hol_stop(session: str) -> str:
     """
     entry = _sessions.pop(session, None)
     if entry:
-        await entry[0].stop()
+        await entry.session.stop()
         return f"Session '{session}' stopped."
     return f"Session '{session}' not found."
 
@@ -188,7 +198,7 @@ async def hol_restart(session: str) -> str:
     if not entry:
         return f"Session '{session}' not found."
 
-    workdir = entry[2]
+    workdir = entry.workdir
     await hol_stop.fn(session)
     return await hol_start.fn(workdir=str(workdir), name=session)
 
