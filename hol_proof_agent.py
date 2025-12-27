@@ -25,7 +25,7 @@ Components
    Tools (all take session:str):
    - hol_start(workdir, name) -> Start or reconnect HOL session (idempotent, returns p() + top_goals())
    - hol_sessions() -> List active sessions (name, workdir, age, status)
-   - hol_send(session, command, timeout=120) -> Send SML, return output
+   - hol_send(session, command, timeout=5) -> Send SML, return output
    - hol_interrupt(session) -> SIGINT to process group
    - hol_stop(session) -> SIGTERM + wait
    - hol_restart(session) -> Stop + start (preserves workdir)
@@ -330,7 +330,7 @@ All HOL interaction via MCP tools (prefix: `{mcp}`). **Never use Bash for HOL.**
 ### {mcp}hol_start(workdir: str, name: str = "default") -> str
 Start or reconnect HOL session. **Idempotent**: if session exists, returns p() + top_goals().
 
-### {mcp}hol_send(session: str, command: str, timeout: int = 120) -> str
+### {mcp}hol_send(session: str, command: str, timeout: int = 5) -> str
 Send SML to HOL. Returns output. Max timeout 600s.
 
 ### {mcp}hol_interrupt(session: str) -> str

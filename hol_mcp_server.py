@@ -115,7 +115,7 @@ async def hol_sessions() -> str:
 
 
 @mcp.tool()
-async def hol_send(session: str, command: str, timeout: int = 120) -> str:
+async def hol_send(session: str, command: str, timeout: int = 5) -> str:
     """Send SML code to HOL.
 
     Args:
