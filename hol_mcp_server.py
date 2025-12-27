@@ -174,7 +174,7 @@ async def hol_stop(session: str) -> str:
 
 
 @mcp.tool()
-async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024) -> str:
+async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024, timeout: int = 90) -> str:
     """Run Holmake --qof in directory.
 
     Args:
@@ -182,12 +182,15 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
         target: Optional specific target to build
         env: Optional environment variables (e.g. {"MY_VAR": "/some/path"})
         log_limit: Max bytes per log file to include on failure (default 1024)
+        timeout: Max seconds to wait (default 90, max 1800)
 
     Returns: Holmake output (stdout + stderr). On failure, includes recent build logs.
 
     Design note: Consider whether env vars should be set once at proof_agent
     session startup (via CLI --env flag) rather than per-build call.
     """
+    # Validate timeout
+    timeout = max(1, min(timeout, 1800))
     import os as _os
     workdir_path = Path(workdir).resolve()
     if not workdir_path.exists():
@@ -225,7 +228,7 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
             stderr=asyncio.subprocess.STDOUT,
         )
 
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=600)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         output = stdout.decode("utf-8", errors="replace")
 
         if proc.returncode == 0:
@@ -259,7 +262,7 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
     except asyncio.TimeoutError:
         if proc:
             proc.kill()
-        return "ERROR: Build timed out after 10 minutes."
+        return f"ERROR: Build timed out after {timeout}s."
     except Exception as e:
         if proc and proc.returncode is None:
             proc.kill()

@@ -28,7 +28,7 @@ Components
    - hol_send(session, command, timeout=120) -> Send SML, return output
    - hol_interrupt(session) -> SIGINT to process group
    - hol_stop(session) -> SIGTERM + wait
-   - holmake(workdir, target="") -> Run Holmake --qof
+   - holmake(workdir, target="", timeout=90) -> Run Holmake --qof
 
    Cursor tools (multi-theorem files):
    - hol_cursor_init(session, file) -> Parse SML, find cheats, load context
@@ -307,9 +307,9 @@ Examples: `hol_send("main", "open fooTheory;")`, `hol_send("main", 'gt `1+1=2`;'
 ### hol_interrupt(session: str) -> str
 Send SIGINT to abort runaway tactic. Use if command takes >15 seconds.
 
-### holmake(workdir: str, target: str = None, env: dict = None) -> str
+### holmake(workdir: str, target: str = None, env: dict = None, timeout: int = 90) -> str
 Run Holmake --qof. Returns output + build logs on failure.
-Use `env` for custom environment variables if needed.
+Use `env` for custom environment variables if needed. Max timeout 1800s.
 
 ### hol_sessions() -> str
 List active sessions with workdir, age, status.
