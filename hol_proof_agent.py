@@ -240,7 +240,7 @@ def build_system_prompt(config: AgentConfig) -> str:
 
 ## COMPLETION CRITERIA
 The proof is complete when:
-1. `holmake(workdir)` succeeds (set MYVAR if needed for myval builds)
+1. `holmake(workdir)` succeeds
 2. NO "CHEAT" warnings in output
 3. NO "FAIL" in output
 
@@ -258,34 +258,39 @@ When complete, output "PROOF_COMPLETE:" followed by a summary.
 ## .hol_init.sml
 {init if init else "(none)"}
 
-## HOL4 MCP Tools
+## MCP Tools
 
-You have access to HOL4 tools via MCP. Use these instead of Bash for HOL interaction:
+All HOL interaction via MCP tools. **Never use Bash for HOL.**
 
-### Session Management
-- `hol_start(workdir, name)` - Start or reconnect to HOL session. Idempotent: if session exists, returns current proof state (p() + top_goals())
-- `hol_sessions()` - List all active sessions
-- `hol_stop(session)` - Terminate session
+### hol_start(workdir: str, name: str = "default") -> str
+Start or reconnect HOL session. **Idempotent**: if session exists, returns p() + top_goals().
+Always call this first - works for both new sessions and recovery after handoff.
 
-### HOL Interaction
-- `hol_send(session, command, timeout)` - Send SML code to HOL
-- `hol_interrupt(session)` - Abort runaway tactic (SIGINT)
-- `holmake(workdir, target)` - Run Holmake --qof
+### hol_send(session: str, command: str, timeout: int = 120) -> str
+Send SML to HOL. Returns output. Max timeout 600s.
+Examples: `hol_send("main", "open fooTheory;")`, `hol_send("main", 'gt `1+1=2`;')`
 
-### Cursor Tools (multi-theorem files)
-- `hol_cursor_init(session, file)` - Parse file, position at first cheat
-- `hol_cursor_status(session)` - Get current position
-- `hol_cursor_start(session)` - Enter goaltree mode for current theorem
-- `hol_cursor_complete(session)` - Splice proof, advance to next theorem
+### hol_interrupt(session: str) -> str
+Send SIGINT to abort runaway tactic. Use if command takes >15 seconds.
 
-### Typical Workflow
-```
-1. hol_start(workdir="/path/to/proofs", name="main")  # Idempotent, returns state
-2. hol_send(session="main", command='open fooTheory;')
-3. hol_send(session="main", command='gt `goal`;')
-4. hol_send(session="main", command='etq "tactic";')
-5. holmake(workdir="/path/to/proofs")  # Verify
-```
+### holmake(workdir: str, target: str = None, env: dict = None) -> str
+Run Holmake --qof. Returns output + build logs on failure.
+Use `env` for custom environment variables if needed.
+
+### hol_sessions() -> str
+List active sessions with workdir, age, status.
+
+### hol_stop(session: str) -> str
+Terminate session. Usually not needed - sessions survive handoffs.
+
+### Cursor Tools (for files with multiple theorems)
+Use when a file has several `cheat` placeholders to fill:
+- `hol_cursor_init(session, file)` - Parse file, find all cheats, position at first
+- `hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
+- `hol_cursor_start(session)` - Enter goaltree mode for current theorem (runs gt + replays tactics before cheat)
+- `hol_cursor_complete(session)` - Extract proof via p(), splice into file, advance to next cheat
+
+Cursor workflow: init → (start → prove → complete) × N → done
 
 ## Goaltree Mode (Interactive Proving)
 
@@ -312,16 +317,15 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 
 ## Workflow
 
-1. **Assess**: Run `holmake(workdir)` to see current state
-2. **Identify**: Find theorems with CHEAT warnings
+1. **Assess**: `holmake(workdir)` to see build state
+2. **Start session**: `hol_start(workdir, "main")` - idempotent, shows current proof state
 3. **Debug interactively**:
-   - Start HOL session: `hol_start(workdir, "main")`
-   - Send commands: `hol_send("main", 'gt `goal`;')`
-   - Try tactics: `hol_send("main", 'etq "tactic";')`
-   - Check state: `hol_proof_state("main")`
-   - Undo mistakes: `hol_send("main", 'backup();')`
+   - `hol_send("main", 'gt `goal`;')` - enter goaltree
+   - `hol_send("main", 'etq "tactic";')` - apply tactic
+   - `hol_send("main", 'p();')` - check proof tree
+   - `hol_send("main", 'backup();')` - undo mistake
 4. **Update file**: Copy tactic script from p() into Theorem block
-5. **Verify**: Run holmake again
+5. **Verify**: `holmake(workdir)` again
 6. **Iterate**: Until no cheats remain
 
 ## Critical Rules
@@ -521,23 +525,17 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         print(f"\n[HANDOFF] Reached {config.max_agent_messages} messages...")
 
                         handoff_prompt = (
-                            "STOP. We're clearing context now. "
-                            "1) If you made substantial progress (cleared a cheat, restructured proof), commit it: "
-                            "   - Run `git status` to review what would be committed "
-                            "   - NEVER use `git add -A`, `git add .`, or `git add <directory>` "
-                            "   - ONLY `git add` specific .sml files you intentionally modified "
-                            "   - Use `git diff <file>` to verify changes before adding "
-                            "2) Run hol_start() to get current proof state (p() output). "
-                            "3) Update the task file: "
-                            "   - Remove any outdated info (old handoffs, superseded notes) to save context "
-                            "   - Add or replace a `## Handoff` section at the end with: "
-                            "     * Working directory (pwd) and git branch "
-                            "     * HOL session name "
-                            "     * What you tried and what worked "
-                            "     * Current proof state (p() output) "
-                            "     * What to try next "
-                            "4) DO NOT stop the HOL session - leave it running. "
-                            "5) After updating the task file, STOP. Do not continue working."
+                            "STOP. Context clearing - your todo list will NOT persist. "
+                            "1) If you made substantial progress, commit it: "
+                            "   - NEVER `git add -A` or `git add .` - only specific .sml files "
+                            "   - Use `git diff <file>` to verify before adding "
+                            "2) Run hol_start() to get current proof state. "
+                            "3) Update the task file ## Handoff section with: "
+                            "   - Working directory, git branch, HOL session name "
+                            "   - What you tried, what worked, current p() state "
+                            "   - What to try next (be specific - this is your only memory) "
+                            "4) Leave HOL session running. "
+                            "5) STOP after updating task file."
                         )
 
                         await client.query(handoff_prompt)
