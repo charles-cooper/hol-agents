@@ -287,10 +287,9 @@ def get_large_files(working_dir: str, byte_threshold: int = 15000, line_threshol
 
 
 def build_system_prompt(config: AgentConfig) -> str:
-    """Build system prompt with task context."""
+    """Build static system prompt (cacheable across runs)."""
     claude_md = read_file(config.claude_md)
-    task = read_file(config.task_file)
-    init = read_file(os.path.join(config.working_dir, ".hol_init.sml"))
+    mcp = "mcp__hol__"  # MCP tool prefix
 
     return f"""You are an autonomous HOL4 theorem proving agent. You run FOREVER until the proof is complete.
 
@@ -321,53 +320,36 @@ The proof is complete when:
 
 When complete, output "PROOF_COMPLETE:" followed by a summary.
 
-## Working Directory
-{config.working_dir}
-
 ## CLAUDE.md Guidelines
 {claude_md}
 
-## Task
-{task}
-
-## .hol_init.sml
-{init if init else "(none)"}
-
 ## MCP Tools
 
-All HOL interaction via MCP tools. **Never use Bash for HOL.**
+All HOL interaction via MCP tools (prefix: `{mcp}`). **Never use Bash for HOL.**
 
-### hol_start(workdir: str, name: str = "default") -> str
+### {mcp}hol_start(workdir: str, name: str = "default") -> str
 Start or reconnect HOL session. **Idempotent**: if session exists, returns p() + top_goals().
-Always call this first - works for both new sessions and recovery after handoff.
 
-### hol_send(session: str, command: str, timeout: int = 120) -> str
+### {mcp}hol_send(session: str, command: str, timeout: int = 120) -> str
 Send SML to HOL. Returns output. Max timeout 600s.
-Examples: `hol_send("main", "open fooTheory;")`, `hol_send("main", 'gt `1+1=2`;')`
 
-### hol_interrupt(session: str) -> str
+### {mcp}hol_interrupt(session: str) -> str
 Send SIGINT to abort runaway tactic. Use if command takes >15 seconds.
 
-### holmake(workdir: str, target: str = None, env: dict = None, timeout: int = 90) -> str
-Run Holmake --qof. Returns output + build logs on failure.
-Use `env` for custom environment variables if needed. Max timeout 1800s.
+### {mcp}holmake(workdir: str, target: str = None, timeout: int = 90) -> str
+Run Holmake --qof. Returns output + build logs on failure. Max timeout 1800s.
 
-### hol_sessions() -> str
+### {mcp}hol_sessions() -> str
 List active sessions with workdir, age, status.
 
-### hol_stop(session: str) -> str
-Terminate session. Usually not needed - sessions survive handoffs.
+### {mcp}hol_restart(session: str) -> str
+Restart session (stop + start, preserves workdir). Use when HOL state is corrupted.
 
-### hol_restart(session: str) -> str
-Restart session (stop + start, preserves workdir). Use when HOL state is corrupted
-or you need to reload theories after file changes.
-
-### Cursor Tools (RECOMMENDED for multi-theorem files)
-Use when a file has `cheat` placeholders to fill:
-- `hol_cursor_init(file, session="default", workdir=None)` - Parse file, auto-start session, enter goaltree for first cheat
-- `hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
-- `hol_cursor_complete(session)` - Extract proof via p(), splice into file, advance and enter goaltree for next
-- `hol_cursor_reenter(session)` - Re-enter goaltree after drop() or to retry
+### Cursor Tools (RECOMMENDED entry point)
+- `{mcp}hol_cursor_init(file, session="default", workdir=None)` - Auto-start session, parse file, enter goaltree
+- `{mcp}hol_cursor_complete(session)` - Extract p(), splice into file, advance, enter goaltree for next
+- `{mcp}hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
+- `{mcp}hol_cursor_reenter(session)` - Re-enter goaltree after drop() or to retry
 
 Cursor workflow: init → (prove → complete) × N → done
 
@@ -396,18 +378,17 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 
 ## Workflow
 
-1. **Assess**: `holmake(workdir)` to see build state
+1. **Assess**: `{mcp}holmake(workdir)` to see build state
 2. **Start proving** (RECOMMENDED):
-   - `hol_cursor_init("path/to/file.sml")` - auto-starts session, enters goaltree for first cheat
-   - Prove interactively with hol_send (etq, p(), backup)
-   - `hol_cursor_complete("default")` - saves proof, advances, enters goaltree for next
+   - `{mcp}hol_cursor_init(file="path/to/file.sml")` - auto-starts session, enters goaltree for first cheat
+   - Prove interactively with `{mcp}hol_send` (etq, p(), backup)
+   - `{mcp}hol_cursor_complete(session="default")` - saves proof, advances, enters goaltree for next
    - Repeat until all theorems done
 3. **Manual alternative** (for single theorems or advanced control):
-   - `hol_start(workdir, "main")` - start session explicitly
-   - `hol_send("main", 'gt `goal`;')` - enter goaltree
-   - `hol_send("main", 'etq "tactic";')` - apply tactic
+   - `{mcp}hol_start(workdir, name="main")` - start session explicitly
+   - `{mcp}hol_send(session="main", command='gt `goal`;')` - enter goaltree
    - Copy p() output to file manually via Edit
-4. **Verify**: `holmake(workdir)` again
+4. **Verify**: `{mcp}holmake(workdir)` again
 5. **Iterate**: Until no cheats remain
 
 ## Critical Rules
@@ -424,10 +405,10 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 ## Recovery
 
 If context seems lost:
-1. Read task file for ## Handoff section
-2. Run hol_cursor_init(file) - auto-starts session, positions at first cheat
-3. Run holmake() to see what's failing
-4. Use hol_cursor_reenter() if you need to retry current theorem after drop()
+1. Check ## Handoff section in first message above
+2. `{mcp}hol_cursor_init(file)` - auto-starts session, positions at first cheat
+3. `{mcp}holmake(workdir)` to see what's failing
+4. `{mcp}hol_cursor_reenter(session)` to retry current theorem after drop()
 
 BEGIN NOW.
 """
@@ -523,8 +504,15 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     # Resuming SDK session - agent has context
                     prompt = initial_prompt or "Continue."
                 else:
-                    # New SDK session - read ## Handoff from system prompt's ## Task section
-                    prompt = "Begin. Check ## Task section above for ## Handoff with current state."
+                    # New SDK session - include task file and context in first message
+                    task = read_file(config.task_file)
+                    init = read_file(os.path.join(config.working_dir, ".hol_init.sml"))
+
+                    prompt = f"## Task File: {config.task_file}\n{task}\n\n"
+                    if init:
+                        prompt += f"## .hol_init.sml\n{init}\n\n"
+
+                    prompt += "Begin. Check ## Handoff section above for current state."
                     if state.hol_session:
                         prompt += f" Previous HOL session: '{state.hol_session}'."
                     prompt += " Start with hol_cursor_init(file) or holmake(workdir)."
@@ -534,7 +522,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     large_files = get_large_files(config.working_dir)
                     if large_files:
                         file_list = ", ".join(f"{f} ({n} lines)" for f, n in large_files[:5])
-                        prompt += f" WARNING: Large files: {file_list}"
+                        prompt += f" WARNING: Large files (consider refactoring): {file_list}."
 
                 print(f"[SEND] {prompt}")
                 await client.query(prompt)
@@ -599,12 +587,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "   - Use `git diff <file>` to verify before adding "
                             "2) Run hol_start() to get current proof state. "
                             "3) Ultrathink like a prompt engineer and write a "
-                            "handoff prompt in the task file to provide all "
-                            "necessary info in the handoff prompt but context "
-                            "optimized. in the prompt tell the agent to start "
-                            "work immediately so that the user doesn't need to "
-                            "additionally say \"yes please start work\". "
-                            "You may want to include info like "
+                            f"handoff prompt in {config.task_file} to provide all "
+                            "necessary info but context optimized. Tell the next agent to start "
+                            "work immediately. Include: "
                             "   - Working directory, git branch, HOL session name "
                             "   - What you tried, what worked, current p() state "
                             "   - What to try next (be specific - this is your only memory) "
