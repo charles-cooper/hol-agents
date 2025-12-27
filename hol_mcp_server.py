@@ -24,6 +24,7 @@ class SessionEntry:
     started: datetime
     workdir: Path
     cursor: Optional[ProofCursor] = None
+    holmake_env: Optional[dict] = None  # env vars for holmake (auto-captured on success)
 
 
 mcp = FastMCP("hol")
@@ -268,6 +269,10 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
         output = stdout.decode("utf-8", errors="replace")
 
         if proc.returncode == 0:
+            # Store env in matching session entries for auto-holmake at startup
+            for entry in _sessions.values():
+                if entry.workdir == workdir_path:
+                    entry.holmake_env = env
             return f"Build succeeded.\n\n{output}"
 
         # Build failed - append relevant logs

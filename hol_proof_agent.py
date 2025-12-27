@@ -200,6 +200,7 @@ class AgentState:
     message_count: int = 0
     session_message_count: int = 0
     hol_session: Optional[str] = None  # HOL session name (key into _sessions)
+    holmake_env: Optional[dict] = None  # env vars for holmake
     # Usage tracking
     input_tokens: int = 0
     output_tokens: int = 0
@@ -231,6 +232,7 @@ class AgentState:
                 "message_count": self.message_count,
                 "session_message_count": self.session_message_count,
                 "hol_session": self.hol_session,
+                "holmake_env": self.holmake_env,
                 "input_tokens": self.input_tokens,
                 "output_tokens": self.output_tokens,
                 "cache_creation_tokens": self.cache_creation_tokens,
@@ -249,6 +251,7 @@ class AgentState:
                     message_count=data.get("message_count", 0),
                     session_message_count=data.get("session_message_count", 0),
                     hol_session=data.get("hol_session"),
+                    holmake_env=data.get("holmake_env"),
                     input_tokens=data.get("input_tokens", 0),
                     output_tokens=data.get("output_tokens", 0),
                     cache_creation_tokens=data.get("cache_creation_tokens", 0),
@@ -545,7 +548,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             hol_state += f"Remaining cheats: {status['remaining_cheats']}"
 
                         try:
-                            hm_out = await holmake.fn(workdir, timeout=60)
+                            # Prefer persisted env, fallback to in-memory
+                            hm_env = state.holmake_env or entry.holmake_env
+                            hm_out = await holmake.fn(workdir, env=hm_env, timeout=60)
                             hol_state += f"\n\n[auto] holmake(\"{workdir}\"):\n{hm_out}"
                         except Exception as e:
                             hol_state += f"\n\n[auto] holmake error: {e}"
@@ -597,6 +602,11 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         state.session_message_count += 1
                         state.message_count += 1
                         print(f"[MSG {state.session_message_count}/{config.max_agent_messages}] (total: {state.message_count})")
+                        # Sync holmake_env from session entry
+                        if state.hol_session and state.hol_session in _sessions:
+                            entry_env = _sessions[state.hol_session].holmake_env
+                            if entry_env != state.holmake_env:
+                                state.holmake_env = entry_env
                         state.save()
 
                     # Log and check for completion
