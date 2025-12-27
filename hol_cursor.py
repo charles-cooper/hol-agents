@@ -97,6 +97,9 @@ class ProofCursor:
         if not thm:
             return "ERROR: No current theorem"
 
+        # Clear any existing goaltree first
+        await self.session.send('drop();', timeout=5)
+
         # Set up goal
         goal = thm.goal.replace('\n', ' ').strip()
         result = await self.session.send(f'gt `{goal}`;', timeout=30)
