@@ -28,6 +28,7 @@ Components
    - hol_send(session, command, timeout=120) -> Send SML, return output
    - hol_interrupt(session) -> SIGINT to process group
    - hol_stop(session) -> SIGTERM + wait
+   - hol_restart(session) -> Stop + start (preserves workdir)
    - holmake(workdir, target="", timeout=90) -> Run Holmake --qof
 
    Cursor tools (multi-theorem files):
@@ -356,6 +357,10 @@ List active sessions with workdir, age, status.
 
 ### hol_stop(session: str) -> str
 Terminate session. Usually not needed - sessions survive handoffs.
+
+### hol_restart(session: str) -> str
+Restart session (stop + start, preserves workdir). Use when HOL state is corrupted
+or you need to reload theories after file changes.
 
 ### Cursor Tools (for files with multiple theorems)
 Use when a file has several `cheat` placeholders to fill:

@@ -174,6 +174,26 @@ async def hol_stop(session: str) -> str:
 
 
 @mcp.tool()
+async def hol_restart(session: str) -> str:
+    """Restart HOL session (stop + start, preserves workdir).
+
+    Use when HOL state is corrupted or you need to reload theories after file changes.
+
+    Args:
+        session: Session name to restart
+
+    Returns: Same as hol_start (session info + proof state)
+    """
+    entry = _sessions.get(session)
+    if not entry:
+        return f"Session '{session}' not found."
+
+    workdir = entry[2]
+    await hol_stop.fn(session)
+    return await hol_start.fn(workdir=str(workdir), name=session)
+
+
+@mcp.tool()
 async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024, timeout: int = 90) -> str:
     """Run Holmake --qof in directory.
 
