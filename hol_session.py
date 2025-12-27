@@ -82,14 +82,15 @@ class HOLSession:
         """Read stdout until null byte."""
         async def read_loop():
             while True:
-                chunk = await self.process.stdout.read(4096)
-                if not chunk:
-                    raise RuntimeError("HOL process died unexpectedly")
-
-                self._buffer += chunk
+                # Check buffer first - may already have complete response
                 if b'\0' in self._buffer:
                     before, self._buffer = self._buffer.split(b'\0', 1)
                     return before.decode()
+
+                chunk = await self.process.stdout.read(4096)
+                if not chunk:
+                    raise RuntimeError("HOL process died unexpectedly")
+                self._buffer += chunk
 
         return await asyncio.wait_for(read_loop(), timeout=timeout)
 

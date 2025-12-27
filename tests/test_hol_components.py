@@ -333,3 +333,28 @@ async def test_hol_session_start_already_running():
         result = await session.start()
         assert "already running" in result.lower()
         assert session.process.pid == pid
+
+
+async def test_hol_session_sequential_sends():
+    """Test sequential sends return correct outputs in order."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        for i in range(10):
+            result = await session.send(f'{i};', timeout=10)
+            assert str(i) in result, f"Expected {i} in result, got: {result}"
+
+
+async def test_hol_session_post_interrupt_sync():
+    """Test that session resyncs correctly after interrupt.
+
+    After timeout/interrupt, buffer and pipe may have stale data.
+    Verify subsequent commands work correctly.
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Trigger interrupt with a timeout
+        result = await session.send('fun loop () = loop (); loop ();', timeout=1)
+        assert "TIMEOUT" in result or "interrupt" in result.lower()
+
+        # Session should resync - send a few commands and verify correct outputs
+        for i in range(5):
+            result = await session.send(f'{100 + i};', timeout=10)
+            assert str(100 + i) in result, f"Expected {100+i} after interrupt, got: {result}"
