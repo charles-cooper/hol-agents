@@ -84,6 +84,14 @@ class ProofCursor:
         self.position: int = 0
         self.completed: set[str] = set()
         self._loaded_to_line: int = 0  # Track how much content is loaded
+        self._file_mtime: float = 0.0  # mtime when file was parsed
+
+    def _check_stale(self) -> bool:
+        """Return True if file has been modified since last parse."""
+        try:
+            return self.file.stat().st_mtime != self._file_mtime
+        except OSError:
+            return True  # File gone = stale
 
     def current(self) -> TheoremInfo | None:
         """Get current theorem."""
@@ -117,6 +125,7 @@ class ProofCursor:
 
     async def initialize(self) -> str:
         """Parse file, load HOL to first cheat, position cursor."""
+        self._file_mtime = self.file.stat().st_mtime
         self.theorems = parse_file(self.file)
 
         if not self.theorems:
@@ -207,13 +216,21 @@ class ProofCursor:
         if not tactic_script:
             return f"ERROR: No proof found. Output:\n{p_output[:500]}"
 
+        # Check for external modifications before writing
+        if self._check_stale():
+            return (
+                f"ERROR: File modified since cursor initialized. "
+                f"Proof for {thm.name} NOT saved. Reinitialize cursor to continue."
+            )
+
         # Splice into file
         content = self.file.read_text()
         try:
             new_content = splice_into_theorem(content, thm.name, tactic_script)
         except ValueError:
-            return f"ERROR: Failed to splice into {thm.name} (file modified externally?)"
+            return f"ERROR: Failed to splice into {thm.name} (theorem not found)"
         atomic_write(self.file, new_content)
+        self._file_mtime = self.file.stat().st_mtime  # Update after our write
         self.completed.add(thm.name)
 
         # Re-parse file (structure may have changed)

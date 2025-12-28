@@ -3,8 +3,9 @@
 import pytest
 import shutil
 import tempfile
+import time
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 from hol_cursor import ProofCursor, atomic_write, get_executable_content, get_script_dependencies
 from hol_file_parser import TheoremInfo
@@ -197,3 +198,66 @@ async def test_proof_cursor_start_current():
             # Verify goaltree is active
             state = await session.send("top_goals();", timeout=10)
             assert "goal" in state.lower() or "+" in state  # Goals present
+
+
+def test_check_stale_detects_modification():
+    """Test _check_stale detects external file modifications."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "test.sml"
+        test_file.write_text("original content")
+
+        session = Mock()
+        cursor = ProofCursor(test_file, session)
+        cursor._file_mtime = test_file.stat().st_mtime
+
+        # Not stale initially
+        assert not cursor._check_stale()
+
+        # Modify file
+        time.sleep(0.01)  # Ensure mtime changes
+        test_file.write_text("modified content")
+
+        # Now stale
+        assert cursor._check_stale()
+
+
+def test_check_stale_missing_file():
+    """Test _check_stale returns True for missing file."""
+    session = Mock()
+    cursor = ProofCursor(Path("/nonexistent/file.sml"), session)
+    cursor._file_mtime = 12345.0
+    assert cursor._check_stale()
+
+
+@pytest.mark.asyncio
+async def test_complete_and_advance_fails_when_stale():
+    """Test complete_and_advance refuses to splice if file was modified."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "test.sml"
+        test_file.write_text("""
+Theorem foo:
+  T
+Proof
+  cheat
+QED
+""")
+        # Mock session that returns a valid proof
+        session = Mock()
+        session.send = AsyncMock(return_value="strip_tac\nval it = () : unit")
+
+        cursor = ProofCursor(test_file, session)
+        cursor._file_mtime = test_file.stat().st_mtime
+        cursor.theorems = [
+            TheoremInfo("foo", "Theorem", "T", 2, 4, 6, True, [], []),
+        ]
+        cursor.position = 0
+
+        # Modify file externally
+        time.sleep(0.01)
+        test_file.write_text("modified content")
+
+        # complete_and_advance should fail
+        result = await cursor.complete_and_advance()
+        assert "ERROR" in result
+        assert "modified" in result.lower()
+        assert "foo" in result  # mentions the theorem
