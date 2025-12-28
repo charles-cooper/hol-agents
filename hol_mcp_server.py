@@ -545,4 +545,32 @@ async def hol_cursor_complete(session: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    import argparse
+    import logging
+    import sys
+
+    parser = argparse.ArgumentParser(description="HOL4 MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http", "sse"],
+        default="stdio",
+        help="Transport protocol (default: stdio)",
+    )
+    parser.add_argument("--port", type=int, default=8000, help="Port for HTTP/SSE (default: 8000)")
+    parser.add_argument("--host", default="127.0.0.1", help="Host for HTTP/SSE (default: 127.0.0.1)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+        logging.getLogger("mcp").setLevel(logging.DEBUG)
+
+    if args.transport == "stdio":
+        mcp.run()
+    else:
+        print(f"HOL MCP server starting on {args.host}:{args.port} ({args.transport})", file=sys.stderr)
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
