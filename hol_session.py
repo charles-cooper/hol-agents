@@ -37,7 +37,7 @@ class HOLSession:
         )
 
         # Wait for initial prompt (null-terminated)
-        output = await self._read_until_null(timeout=60)
+        await self._read_response(timeout=60)
 
         # Load etq.sml (goaltree mode helpers)
         await self.send(ETQ_PATH.read_text(), timeout=30)
@@ -54,22 +54,6 @@ class HOLSession:
         self.process.stdin.write(sml_code.encode() + b'\0')
         await self.process.stdin.drain()
 
-    async def _read_to_last_null(self, timeout: float) -> str:
-        """Read until null, drain extra, return last complete segment."""
-        output = await self._read_until_null(timeout=timeout)
-
-        extra = await self._drain_available()
-        self._buffer += extra
-
-        parts = self._buffer.split(b'\0')
-        self._buffer = parts[-1]  # Keep trailing incomplete data
-        for part in reversed(parts[:-1]):
-            if part:
-                output = part.decode()
-                break
-
-        return output
-
     async def send(self, sml_code: str, timeout: float = 5) -> str:
         """Send SML code and wait for response."""
         if not self.process or self.process.returncode is not None:
@@ -78,53 +62,30 @@ class HOLSession:
         await self._write_command(sml_code)
 
         try:
-            return await self._read_to_last_null(timeout=timeout)
+            return await self._read_response(timeout=timeout)
         except asyncio.TimeoutError:
             self.interrupt()
             try:
-                remaining = await self._read_to_last_null(timeout=5)
+                remaining = await self._read_response(timeout=5)
             except asyncio.TimeoutError:
                 remaining = ""
-                extra = await self._drain_available()
-                self._buffer += extra
-                parts = self._buffer.split(b'\0')
-                self._buffer = parts[-1]
-                for part in reversed(parts[:-1]):
-                    if part:
-                        remaining = part.decode()
-                        break
             msg = f"TIMEOUT after {timeout}s - sent interrupt."
             return f"{msg}\n{remaining}" if remaining else msg
 
-    async def _drain_available(self, timeout: float = 0.1) -> bytes:
-        """Drain all available output from pipe with short timeout."""
-        drained = b""
-        while True:
-            try:
-                chunk = await asyncio.wait_for(
-                    self.process.stdout.read(4096),
-                    timeout=timeout
-                )
-                if not chunk:
-                    break
-                drained += chunk
-            except asyncio.TimeoutError:
-                break
-        return drained
-
-    async def _read_until_null(self, timeout: float) -> str:
-        """Read stdout until null byte."""
+    async def _read_response(self, timeout: float) -> str:
+        """Read until null terminator, return all segments joined."""
         async def read_loop():
             while True:
-                # Check buffer first - may already have complete response
-                if b'\0' in self._buffer:
-                    before, self._buffer = self._buffer.split(b'\0', 1)
-                    return before.decode()
-
-                chunk = await self.process.stdout.read(4096)
+                chunk = await self.process.stdout.read(65536)
                 if not chunk:
                     raise RuntimeError("HOL process died unexpectedly")
                 self._buffer += chunk
+                if self._buffer.endswith(b'\0'):
+                    break
+
+            parts = self._buffer.split(b'\0')
+            self._buffer = b""
+            return "\n".join(p.decode() for p in parts if p)
 
         return await asyncio.wait_for(read_loop(), timeout=timeout)
 
