@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_DIR="$SCRIPT_DIR/skills/hol4"
+SKILL_DIR="$SCRIPT_DIR/skills/hol-script-legacy"
 PROJECT_CLAUDE_DIR=".claude"
 TARGET_DIR="$PROJECT_CLAUDE_DIR/skills"
 
@@ -21,14 +21,14 @@ fi
 
 mkdir -p "$TARGET_DIR"
 
-if [ -L "$TARGET_DIR/hol4" ]; then
+if [ -L "$TARGET_DIR/hol" ]; then
     echo "Updating existing symlink..."
-    rm "$TARGET_DIR/hol4"
-elif [ -e "$TARGET_DIR/hol4" ]; then
-    echo "Error: $TARGET_DIR/hol4 exists and is not a symlink"
+    rm "$TARGET_DIR/hol"
+elif [ -e "$TARGET_DIR/hol" ]; then
+    echo "Error: $TARGET_DIR/hol exists and is not a symlink"
     echo "Remove it manually if you want to install"
     exit 1
 fi
 
-ln -s "$SKILL_DIR" "$TARGET_DIR/hol4"
-echo "Installed HOL4 skill: $TARGET_DIR/hol4 -> $SKILL_DIR"
+ln -s "$SKILL_DIR" "$TARGET_DIR/hol"
+echo "Installed HOL skill: $TARGET_DIR/hol -> $SKILL_DIR"

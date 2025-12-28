@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HELPER="$SCRIPT_DIR/../hol-agent-helper.sh"
+HELPER="$SCRIPT_DIR/hol-agent-helper.sh"
 
 # Colors for output
 RED='\033[0;31m'

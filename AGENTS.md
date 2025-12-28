@@ -1,113 +1,175 @@
-# HOL Agent Helper - Contributor Guide
+# HOL4 Proof Agents - Contributor Guide
 
-Tool for AI agents to interactively develop HOL4 proofs. See SKILL.md for usage.
+This document explains the internals for contributors and AI agents working on this codebase.
 
-## Architecture
+## Repository Structure
 
-### Session Isolation
+```
+prompts/hol4/           # Methodology prompts (SOURCE OF TRUTH)
+  planner.md            # Phase 1: mathematical planning
+  sketch_impl.md        # Phase 2: HOL4 sketching with cheats
+  proof_agent.template.md  # Phase 3: filling in cheats
 
-Each working directory gets isolated session in `/tmp/hol_sessions/<hash>/`:
-- `in` - Named FIFO for commands
-- `log` - Output (null-byte delimited)
-- `pid` - Pipeline PID
-- `workdir` - Original directory path
-- `session_id` - Session ID (if `HOL_SESSION_ID` was set)
-- `created` - Unix timestamp when session started
-- `activity` - Unix timestamp of last command (for reaping)
+skills/hol4/            # Claude Code TUI entry points
+  SKILL.md              # Skill index
+  plan.md, sketch.md, prove.md
 
-Hash is first 16 chars of SHA256 of `path` or `path:session_id` if `HOL_SESSION_ID` is set.
+repo_prompt/            # Detailed recovery prompts for reconstruction
+  MAIN.md               # Architecture overview
+  mcp_server.md, session.md, cursor.md, ...
 
-### Multiple Sessions (Same Directory)
+hol_mcp_server.py       # MCP server (FastMCP)
+hol_session.py          # HOL subprocess wrapper
+hol_cursor.py           # File-based proof cursor
+hol_file_parser.py      # SML parsing
 
-Use `-s` flag or `HOL_SESSION_ID` env var to run concurrent sessions in the same directory:
+hol_planner.py          # Phase 1 orchestrator
+hol_sketch.py           # Phase 2 orchestrator
+hol_proof_agent.py      # Phase 3 orchestrator (forever loop)
+hol_pipeline.py         # End-to-end automation
+
+sml_helpers/etq.sml     # Tactic extraction for goaltree mode
+tests/                  # Python tests for MCP components
+legacy/                 # Old bash-based implementation
+```
+
+## Key Components
+
+### MCP Server (`hol_mcp_server.py`)
+
+FastMCP server providing HOL4 tools. In-memory session registry.
+
+**Session registry:** `dict[str, tuple[HOLSession, datetime, Path, ProofCursor|None]]`
+
+**Tools:**
+- Session: `hol_start`, `hol_send`, `hol_interrupt`, `hol_stop`, `hol_restart`, `hol_sessions`
+- Cursor: `hol_cursor_init`, `hol_cursor_complete`, `hol_cursor_status`, `hol_cursor_reenter`
+- Build: `holmake`
+
+**Key detail:** The MCP server is imported (not spawned) by orchestrators. This allows sessions to survive across Claude context clears (handoffs).
+
+### HOL Session (`hol_session.py`)
+
+Async subprocess wrapper for HOL4.
+
+**Null-byte framing:** HOL started with `--zero` flag. Each response terminated by `\0`. The `send()` method writes command + NUL, reads until NUL.
+
+**Process group:** Uses `setsid` to create new process group. Enables clean interrupt (`os.killpg`) without killing parent.
+
+**Init scripts:** Loads `sml_helpers/etq.sml` (tactic extraction) and `.hol_init.sml` (project-specific) on startup.
+
+**Interrupt handling:** HOL `--zero` mode outputs TWO null bytes after SIGINT. First terminates interrupt message, second is spurious. Must drain both.
+
+### Proof Cursor (`hol_cursor.py`, `hol_file_parser.py`)
+
+Tracks position in an SML file, manages proof lifecycle.
+
+**Workflow:** `init → (prove → complete) × N`
+
+1. `initialize(file)` - Parse file, find first cheat
+2. `start_current()` - Load context, enter goaltree for current theorem
+3. `complete_and_advance()` - Extract p(), splice into file, move to next cheat
+
+**Splicing:** `splice_into_theorem(content, theorem_name, tactics)` replaces the proof body while preserving structure.
+
+**Goaltree mode:** Uses `gt`/`etq`/`p()` instead of goalstack. `etq` records tactic names, `p()` extracts the proof script.
+
+### Orchestrators
+
+**`hol_proof_agent.py`** (Phase 3 - full):
+- Forever loop until `PROOF_COMPLETE:` detected
+- Handoff at `--max-messages`: commit, update task file, clear Claude session
+- HOL session survives handoffs (same MCP server)
+- Auto-injects HOL state (sessions, goals, holmake) at startup
+- Bash restricted to git commands only
+
+**`hol_planner.py`** (Phase 1 - thin):
+- Loads planner prompt as system prompt
+- Runs until `PLAN_COMPLETE:`
+- No MCP needed (pure reasoning)
+
+**`hol_sketch.py`** (Phase 2 - thin):
+- Loads sketch prompt as system prompt
+- MCP for holmake verification
+- Runs until `SKETCH_COMPLETE:`
+
+**`hol_pipeline.py`** (chains all three):
+- Plan → Sketch → Prove
+- `--skip-plan`, `--skip-sketch` for partial runs
+
+## Goaltree Mode
+
+Always use goaltree (`gt`/`etq`) instead of goalstack (`g`/`e`):
+
+```sml
+gt `A /\ B ==> B /\ A`;
+etq "strip_tac";
+etq "conj_tac";
+etq "simp[]";
+etq "simp[]";
+p();  (* Shows: strip_tac \\ conj_tac >- simp[] >- simp[] *)
+```
+
+**Why:** `etq` records tactic names as strings, enabling `p()` to extract the exact proof script. Regular `e()` loses this information.
+
+**Backtracking:** `backup()` removes last tactic from tree. `drop()` abandons proof entirely.
+
+## State Persistence
+
+**Agent state:** `.claude/hol_agent_state.json`
+```json
+{
+  "session_id": "...",           // Claude SDK session (for resume)
+  "message_count": 42,           // Total across handoffs
+  "hol_session": "default",      // HOL session name in MCP registry
+  "holmake_env": {...}           // Cached env vars
+}
+```
+
+**HOL sessions:** In-memory only (MCP server). Survive handoffs, NOT orchestrator restarts.
+
+## Testing
+
 ```bash
-./hol-agent-helper.sh -s agent1 start
-./hol-agent-helper.sh -s agent1 send 'val x = 1;'
-# or equivalently:
-HOL_SESSION_ID=agent2 ./hol-agent-helper.sh start
+# Unit tests
+python -m pytest tests/
+
+# Manual MCP test
+python hol_mcp_server.py  # Starts MCP server on stdio
 ```
-Each session ID hashes with the directory to create independent session dirs. All commands must use the same session ID to target the correct session.
-
-### Null-Byte Framing
-
-HOL started with `--zero` flag. Each response terminated by `\0`.
-- `wait_for_response()` polls log for null byte
-- `awk 'BEGIN{RS="\0"}'` extracts last segment
-- Default timeout: 5 minutes (3000 deciseconds)
-
-### Process Model
-
-```
-setsid sh -c "tail -f FIFO | hol --zero > log 2>&1"
-```
-
-- `tail -f` keeps FIFO open across multiple writes
-- `setsid` detaches from parent (survives script exit)
-- Commands: `printf '%s\0' "$cmd" > FIFO`
-
-## Key Functions
-
-| Function | Purpose |
-|----------|---------|
-| `start_hol` | Create session, start pipeline, load `.hol_init.sml` if exists |
-| `send_cmd` | Write command to FIFO, wait for response |
-| `send_file` | Send file contents (avoids shell escaping) |
-| `load_to` | Dispatch to `load_to_blank` or `load_to_cheat` based on line content |
-| `load_to_blank` | Load script prefix up to blank line |
-| `load_to_cheat` | Parse proof, replay tactics to cheat point |
-| `parse_and_send_tactics` | Handle THEN1/`>-` nesting by splitting at incomplete blocks |
-| `interrupt_hol` | SIGINT to HOL process (stop runaway tactics) |
-
-## Design Decisions
-
-**Why FIFO + tail -f?**
-Direct pipe closes after first write. tail -f keeps stdin open for persistent session.
-
-**Why null-byte framing?**
-HOL output can contain anything. Null bytes are safe delimiters, and `--zero` is built-in.
-
-**Why file-based sends?**
-Shell escaping of HOL backquotes (`` ` ``) is fragile. Files bypass escaping entirely.
-
-**Why hash-based session dirs?**
-Allows multiple independent sessions. Path in dirname would have slash issues.
 
 ## Gotchas
 
-- `pkill -s PID` kills session group - needed because pipeline has multiple processes
-- `holdeptool.exe` must exist at `$HOLDIR/bin/` for `load-to` dependency discovery
-- Cheat navigation uses awk to track paren depth for THEN1 splitting - complex but necessary
-- Session vars (`SESSION_DIR`, etc.) are global - `load_to` updates them when changing directories
+1. **Null-byte framing:** HOL `--zero` mode is essential. Without it, can't reliably detect response boundaries.
 
-## Testing Changes
+2. **Double null after interrupt:** Must drain both or next `send()` returns empty.
 
-```bash
-# Start session, verify basics
-./hol-agent-helper.sh start
-./hol-agent-helper.sh send 'val x = 1 + 1;'
-./hol-agent-helper.sh status
+3. **MCP import vs spawn:** Orchestrators import the MCP server module to share the session registry. Spawning would create isolated registries.
 
-# Test load-to on a real script
-./hol-agent-helper.sh load-to /path/to/script.sml LINE
+4. **Cursor vs proof state:** Two orthogonal concerns:
+   - File position (ProofCursor): which theorem in file
+   - Proof state (HOL goaltree): which step in current proof
 
-# Test cheat navigation
-./hol-agent-helper.sh load-to /path/to/script.sml CHEAT_LINE
+5. **Template placeholders:** `proof_agent.template.md` has `{mcp}`, `{max_agent_messages}`, `{claude_md}` that orchestrator fills in.
 
-# Interrupt a runaway tactic
-./hol-agent-helper.sh interrupt
+6. **etq.sml loading:** Session must load `sml_helpers/etq.sml` for `etq` to work. Done automatically in `HOLSession.start()`.
 
-# Cleanup
-./hol-agent-helper.sh stop
-./hol-agent-helper.sh reap      # kill stale sessions (>2h inactive) and old builds
-./hol-agent-helper.sh nuke      # kill ALL HOL processes (prompts, --force to skip)
-```
+## Extending
 
-## Files
+**Adding a new MCP tool:**
+1. Add function in `hol_mcp_server.py` with `@mcp.tool()` decorator
+2. Document in `repo_prompt/mcp_server.md`
+3. Update prompts if agents should use it
 
-```
-hol-agent-helper.sh      -- Main script
-tests/test-reaping.sh    -- Tests for reap/nuke functionality
-README.md                -- Human documentation
-SKILL.md                 -- Consumer agent documentation
-AGENTS.md                -- This file (contributor guide)
-```
+**Adding a new phase:**
+1. Create methodology prompt in `prompts/hol4/`
+2. Create thin wrapper in `hol_<phase>.py`
+3. Add to pipeline in `hol_pipeline.py`
+4. Create skill in `skills/hol4/`
+
+**Changing methodology:**
+Edit the prompt files. They are the source of truth. The Python code is just infrastructure.
+
+## Recovery
+
+If codebase is lost, see `repo_prompt/MAIN.md` for full architecture and component-specific recovery prompts.

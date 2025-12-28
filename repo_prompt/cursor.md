@@ -1,0 +1,149 @@
+# Proof Cursor Recovery Prompt
+
+## Files: `hol_cursor.py`, `hol_file_parser.py`
+
+File-based proof development: parse SML, track position, splice completed proofs.
+
+## TheoremInfo Dataclass
+
+```python
+@dataclass
+class TheoremInfo:
+    name: str                    # Theorem name
+    kind: str                    # "Theorem", "Triviality", "Definition"
+    goal: str                    # The goal term (backquoted)
+    start_line: int              # Line number in file
+    end_line: int                # End of QED
+    has_cheat: bool              # Contains cheat in proof
+    tactics_before_cheat: str    # Tactics to replay before cheat point
+    full_proof: str              # Complete proof text
+```
+
+## File Parser
+
+```python
+def parse_theorems(content: str) -> list[TheoremInfo]:
+    """Parse SML file for theorem blocks.
+
+    Recognizes:
+    - Theorem name: goal Proof tactics QED
+    - Triviality name: goal Proof tactics QED
+    - Definition name = term
+
+    Extracts goal from backquotes, identifies cheat locations.
+    """
+
+def splice_into_theorem(content: str, name: str, new_tactics: str) -> str:
+    """Replace proof body of named theorem.
+
+    Finds: Theorem name: ... Proof OLD QED
+    Replaces with: Theorem name: ... Proof NEW QED
+
+    Preserves formatting, handles multi-line proofs.
+    """
+
+def parse_p_output(output: str) -> str:
+    """Extract tactic script from p() output.
+
+    p() prints the recorded proof tree. This function extracts
+    just the tactic script suitable for splicing into file.
+    """
+```
+
+## ProofCursor Class
+
+```python
+class ProofCursor:
+    file_path: Path
+    theorems: list[TheoremInfo]
+    current_index: int
+    completed: list[str]  # Names of completed theorems
+
+    def __init__(self, file_path: Path):
+        """Parse file, find theorems with cheats."""
+
+    def initialize(self, session: HOLSession) -> str:
+        """Set up HOL context for proving.
+
+        1. Parse file for theorems
+        2. Find first theorem with cheat
+        3. Load file content up to that theorem into HOL
+           (so dependencies are available)
+        4. Enter goaltree for first cheat
+        5. Return top_goals()
+        """
+
+    def start_current(self, session: HOLSession) -> str:
+        """Enter goaltree for current theorem.
+
+        1. gt `goal`
+        2. Replay tactics_before_cheat via etq
+        3. Return top_goals()
+        """
+
+    def complete_and_advance(self, session: HOLSession) -> str:
+        """Finish current, move to next.
+
+        1. Call p() to extract proof
+        2. Parse p() output to get tactics
+        3. Splice into file (replace cheat)
+        4. Mark as completed
+        5. Advance to next cheat
+        6. Enter goaltree for next
+        7. Return new top_goals()
+        """
+
+    def reenter(self, session: HOLSession) -> str:
+        """Re-enter goaltree for current theorem.
+
+        Used after drop() or failed attempt.
+        """
+
+    @property
+    def status(self) -> dict:
+        """Return progress info: file, position, current, remaining."""
+```
+
+## Workflow
+
+```
+cursor_init(file)
+    │
+    ▼
+┌─────────────────┐
+│ Parse file      │
+│ Find cheats     │
+│ Load context    │
+│ Enter goaltree  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐     ┌─────────────────┐
+│ Prove with etq  │────▶│ cursor_complete │
+│ Check p()       │     │ Splice to file  │
+│ backup() if bad │     │ Advance         │
+└─────────────────┘     └────────┬────────┘
+         ▲                       │
+         │                       │
+         └───────────────────────┘
+                  (repeat)
+```
+
+## Context Loading
+
+When entering a theorem mid-file, previous definitions must be loaded:
+
+```sml
+(* File content up to current theorem is sent to HOL *)
+(* This makes prior Theorems/Definitions available *)
+```
+
+The cursor tracks what's been loaded to avoid re-loading.
+
+## Reconstruction Notes
+
+- Parsing uses regex for Theorem/Triviality/Definition blocks
+- Cheat detection looks for literal `cheat` in proof body
+- tactics_before_cheat captures partial proofs (up to cheat point)
+- Splicing preserves indentation and file structure
+- p() output format depends on etq.sml implementation
