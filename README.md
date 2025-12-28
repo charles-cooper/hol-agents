@@ -136,6 +136,10 @@ legacy/                   # Previous bash-based implementation
 
 Install the skill:
 ```bash
+# From your project directory
+/path/to/hol-agents/install-skill.sh
+
+# Or manually
 mkdir -p .claude/skills
 ln -s /path/to/hol-agents/skills/hol4 .claude/skills/hol4
 ```
