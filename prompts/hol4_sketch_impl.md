@@ -179,14 +179,23 @@ Each subtask is now tractable within a single context window.
 
 ## Output: The Proof Sketch
 
-A proof sketch is a HOL4 file that:
+A proof sketch consists of TWO types of output:
+
+### 1. SML Files (`.sml`)
+The HOL4 code that:
 - Compiles successfully (with cheats)
 - Shows the complete proof architecture
 - Has all theorem statements properly typed
 - Demonstrates how helpers combine to prove the main result
 - Includes comments linking to the proof plan
 
-## File Structure
+### 2. Task Files (`.md`)
+Markdown files that serve as **prompts for subagents** filling in cheats:
+- One task file per non-trivial cheat (or group of related cheats)
+- Contains everything a subagent needs to complete the proof
+- Self-contained: a subagent should be able to work from the task file alone
+
+## SML File Structure
 
 ```sml
 (* ========================================================================
@@ -374,6 +383,163 @@ Proof
 QED
 ```
 
+## Task File Structure
+
+For each cheat in the SML file, create a corresponding task file that a subagent can use to fill in the proof.
+
+### Task File Template
+
+```markdown
+# TASK: [theorem_name] - [brief description]
+
+## Goal
+
+Replace the cheat in `[theorem_name]` with a complete proof.
+
+## Theorem Statement
+
+```sml
+Theorem [theorem_name]:
+  [full statement copied from sketch]
+```
+
+## Location
+
+- File: `[filename].sml`
+- Line: [approximate line number of cheat]
+- Context: [where this fits in the overall proof - helper lemma / main theorem case / etc.]
+
+## Mathematical Argument
+
+**WHY THIS IS TRUE:**
+[Copy the WHY THIS IS TRUE comment from the sketch - this is the verified argument from the planner]
+
+## Available Resources
+
+### Assumptions in Scope
+[List relevant assumptions available at the cheat point]
+
+### Helper Lemmas Available
+- `[lemma1]`: [what it provides]
+- `[lemma2]`: [what it provides]
+
+### Relevant Definitions
+- `[def1]`: [brief description]
+- `[def2]`: [brief description]
+
+## Proof Approach
+
+[Expand on the TODO hint from the cheat comment]
+
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Constraints
+
+- Output must be valid HOL4 tactic proof
+- Must not introduce new cheats (unless explicitly split into sub-tasks)
+- Should follow the mathematical argument above
+
+## Deliverable
+
+Replace the `cheat` with a complete proof. Return:
+1. The proof tactics (to replace `cheat`)
+2. Any issues encountered or deviations from the planned approach
+```
+
+### Task File Naming Convention
+
+```
+TASK_[theorem]_[description].md
+
+Examples:
+TASK_P_APPEND_main.md
+TASK_flatten_preserves_base_case.md
+TASK_flatten_preserves_inductive_step.md
+TASK_LENGTH_FLAT.md
+```
+
+### Grouping Related Cheats
+
+If multiple cheats are closely related and small, group them in one task file:
+
+```markdown
+# TASK: flatten_preserves - simple cases
+
+## Goals
+
+Replace cheats in the following locations:
+1. `P_empty` - trivial base case
+2. `LENGTH_FLAT` - standard list induction
+
+[... rest of template ...]
+
+## Deliverables
+
+Return proofs for both theorems.
+```
+
+### Task File Example
+
+```markdown
+# TASK: P_APPEND - prefix preservation under append
+
+## Goal
+
+Replace the cheat in `P_APPEND` with a complete proof.
+
+## Theorem Statement
+
+```sml
+Theorem P_APPEND:
+  ∀xs ys. P xs ⇒ P (xs ++ ys)
+```
+
+## Location
+
+- File: `flatten_preserves_sketch.sml`
+- Line: ~618
+- Context: Key helper lemma used in main theorem's inductive case
+
+## Mathematical Argument
+
+**WHY THIS IS TRUE:**
+P is defined by structural recursion on the input. For each case,
+it examines only a fixed prefix determined by the structure:
+- Base case: examines first k elements
+- Recursive case: examines current element, then recurses on rest
+
+The key insight is that P always terminates after examining a bounded prefix.
+Any elements beyond this prefix are never examined, so appending arbitrary
+elements at the end cannot affect whether P holds.
+
+## Available Resources
+
+### Helper Lemmas Available
+- `P_def`: Definition of P (examine to see what prefix it checks)
+
+### Relevant Definitions
+- `P`: The property being preserved (defined in parent theory)
+
+## Proof Approach
+
+1. Examine `P_def` to understand what prefix P examines
+2. Induction on the structure that P recurses over
+3. For each case, show that `xs ++ ys` has the same prefix as `xs` for the portion P examines
+4. Conclude P (xs ++ ys) from P xs
+
+## Constraints
+
+- Output must be valid HOL4 tactic proof
+- Must not introduce new cheats
+- Proof should be 5-15 lines of tactics
+
+## Deliverable
+
+Replace the `cheat` with a complete proof.
+```
+
 ## Main Theorem Proof Structure
 
 The main theorem proof should:
@@ -526,6 +692,7 @@ QED
 
 Before delivering the sketch:
 
+### SML Files
 - [ ] File compiles with `Holmake` (allowing cheats)
 - [ ] All helpers from plan have theorem statements
 - [ ] Main theorem proof shows complete case structure
@@ -535,6 +702,15 @@ Before delivering the sketch:
 - [ ] Dependency order is correct (helpers before main theorem)
 - [ ] Types are explicit where inference might fail
 - [ ] No orphan lemmas - every helper is used somewhere
+
+### Task Files
+- [ ] One task file per non-trivial cheat (or logical grouping)
+- [ ] Each task file contains the full theorem statement
+- [ ] Each task file contains the "WHY THIS IS TRUE" argument
+- [ ] Each task file lists available resources (lemmas, definitions)
+- [ ] Each task file has a concrete proof approach
+- [ ] Task files are self-contained (subagent needs no other context)
+- [ ] Task file names follow convention: `TASK_[theorem]_[description].md`
 
 ## Example: Complete Sketch
 
@@ -679,3 +855,4 @@ val _ = export_theory();
 6. **Split before you struggle** - If the task feels large, split it. Don't attempt monolithic output.
 7. **Each subtask = one context window** - This is non-negotiable. Recursive splitting is always available.
 8. **Every theorem needs "WHY THIS IS TRUE"** - The mathematical argument from the planner must be preserved in comments. Without this, the next agent filling in proofs is working blind.
+9. **Task files are subagent prompts** - Each cheat needs a corresponding task file with full context. The subagent should be able to work from the task file alone without reading the entire codebase.
