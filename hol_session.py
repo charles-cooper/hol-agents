@@ -55,11 +55,25 @@ class HOLSession:
         self.process.stdin.write(sml_code.encode() + b'\0')
         await self.process.stdin.drain()
 
+    async def _drain_pipe(self):
+        """Drain any stale data from pipe before sending new command."""
+        while True:
+            try:
+                chunk = await asyncio.wait_for(
+                    self.process.stdout.read(65536),
+                    timeout=0.01
+                )
+                if not chunk:
+                    break
+            except asyncio.TimeoutError:
+                break
+
     async def send(self, sml_code: str, timeout: float = 5) -> str:
         """Send SML code and wait for response."""
         if not self.process or self.process.returncode is not None:
             return "ERROR: HOL not running"
 
+        await self._drain_pipe()
         await self._write_command(sml_code)
 
         try:
