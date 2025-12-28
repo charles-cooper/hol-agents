@@ -214,7 +214,7 @@ class ProofCursor:
         tactic_script = parse_p_output(p_output)
 
         if not tactic_script:
-            return f"ERROR: No proof found. Output:\n{p_output[:500]}"
+            return f"ERROR: No proof found. Output:\n{p_output}"
 
         # Check for external modifications before writing
         if self._check_stale():
