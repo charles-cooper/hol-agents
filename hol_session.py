@@ -3,6 +3,7 @@
 import asyncio
 import os
 import signal
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -74,14 +75,13 @@ class HOLSession:
 
     async def _read_response(self, timeout: float) -> str:
         """Read until null terminator, return all segments joined."""
+        self._buffer = b""
         async def read_loop():
-            while True:
+            while not self._buffer.endswith(b'\0'):
                 chunk = await self.process.stdout.read(65536)
                 if not chunk:
                     raise RuntimeError("HOL process died unexpectedly")
                 self._buffer += chunk
-                if self._buffer.endswith(b'\0'):
-                    break
 
             parts = self._buffer.split(b'\0')
             self._buffer = b""
@@ -95,6 +95,8 @@ class HOLSession:
             try:
                 pgid = os.getpgid(self.process.pid)
                 os.killpg(pgid, signal.SIGINT)
+                # give time for hol to write to stdout
+                time.sleep(0.01)
             except (ProcessLookupError, PermissionError):
                 pass
 
