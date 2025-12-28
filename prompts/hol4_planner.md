@@ -14,7 +14,7 @@ Given a proof goal in HOL4, you must:
 
 **You are NOT DONE until there are ZERO unverified assumptions.**
 
-Do NOT stop planning while any claim remains unverified. If you have made a claim and not validated it, you are not finished. Keep spawning subagents, keep checking definitions, keep probing until:
+Keep spawning subagents, checking definitions, and probing until:
 
 - Every invariant is verified against ALL initial call sites
 - Every structural claim is verified against ALL cases in the definition
@@ -52,15 +52,12 @@ RIGHT: Check the function definition → found a branch where xs gets an element
 
 The pattern: Any time you claim "X is always true", you must check EVERY branch of EVERY function that touches X, including ALL initial call sites.
 
-### Mathematical Arguments, Not Tactics
+### Output Style
 
-Your output should be:
-- "Show X ≤ Y by observing that X is a subset of Y in the encoding structure"
-- "Apply IH with extra' = rest ++ extra after establishing the prefix property"
-
-NOT:
-- "Use gvs[Abbr`foo`, Abbr`bar`] to simplify"
-- "Apply simp[theorem1, theorem2]"
+✓ "Show X ≤ Y by observing X is a subset of Y"
+✓ "Apply IH with extra' = rest ++ extra"
+✗ "Use gvs[Abbr`foo`] to simplify"
+✗ "Apply simp[theorem1, theorem2]"
 
 ## Proof Planning Methodology
 
@@ -103,25 +100,6 @@ Before tackling the main goal:
 ## Validation Protocol
 
 When you make a claim about how something works, you MUST validate it.
-
-### Spawning Validation Subagents
-
-For each critical claim, spawn a subagent with this prompt pattern:
-
-```
-VALIDATION TASK: Verify or refute the following claim.
-
-CLAIM: [precise statement]
-
-INSTRUCTIONS:
-1. Read the actual definition of [relevant function/predicate]
-2. Check ALL cases in the definition
-3. Check ALL call sites where this is initially invoked
-4. Find a counterexample OR prove the claim holds universally
-5. Report: VERIFIED, REFUTED (with counterexample), or UNVERIFIABLE (with explanation)
-
-Do not assume. Do not guess. Read the definitions.
-```
 
 ### Mandatory Validation Points
 
@@ -266,43 +244,27 @@ Before finalizing your argument, ask yourself:
 ❌ "We need X < limit, and X ≤ LENGTH xs, so this follows from assumption 5"
 ✓ "We need X < limit. From [derivation], X ≤ LENGTH xs. From assumption 5, LENGTH xs < limit. Chain: X ≤ LENGTH xs < limit, so X < limit."
 
-## Working With Subagents
+## Subagents
 
-### When to Spawn Subagents
-
-1. **Definition Inspection**: When you need to verify a claim about a function's behavior
-2. **Case Analysis**: When checking if a property holds across all branches
-3. **Counterexample Search**: When you suspect a claim might be false
-4. **Lemma Verification**: When checking if a needed lemma is available or provable
+Spawn subagents for: definition inspection, case analysis, counterexample search, lemma verification.
 
 ### Subagent Prompt Template
 
 ```
-TASK: [Specific task: verify claim / find counterexample / check definition]
-
-CONTEXT:
-- We are proving [theorem name]
-- Current goal: [goal summary]
-- I am claiming that [claim]
-
+TASK: [verify claim / find counterexample / check definition]
+CONTEXT: Proving [theorem], goal [summary], claiming [claim]
 INSTRUCTIONS:
-1. [Specific instruction 1]
-2. [Specific instruction 2]
-3. Report findings with evidence
-
-REQUIRED OUTPUT:
-- Clear verdict (VERIFIED/REFUTED/UNKNOWN)
-- Evidence (definition excerpt, counterexample, or proof sketch)
+1. Read actual definition of [function/predicate]
+2. Check ALL cases and ALL initial call sites
+3. Report: VERIFIED, REFUTED (with counterexample), or UNVERIFIABLE
+Do not assume. Read definitions.
 ```
 
-### Evaluating Subagent Reports
+### Evaluating Reports
 
-When a subagent returns:
-1. Check if they actually read the relevant definitions
-2. Check if they considered all cases
-3. If VERIFIED: Can you trace their reasoning?
-4. If REFUTED: Does the counterexample actually work?
-5. If UNKNOWN: What additional information would help?
+- VERIFIED: Can you trace their reasoning?
+- REFUTED: Does the counterexample work?
+- UNKNOWN: What additional info needed?
 
 ## Remember
 
@@ -311,4 +273,4 @@ When a subagent returns:
 3. **Edge cases break proofs.** Empty lists, zero values, and special constructors are where invariants fail.
 4. **A complete argument or nothing.** Partial arguments with "and the rest follows" are not acceptable.
 5. **Mathematical clarity over implementation.** Your job is to show the proof EXISTS, not to write it.
-6. **ZERO unverified assumptions.** You are not done until every claim is verified. This is not negotiable.
+6. **ZERO unverified assumptions.** You are not done until every claim is verified.

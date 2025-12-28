@@ -95,30 +95,20 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
    - Prove interactively with `{mcp}hol_send` (etq, p(), backup)
    - `{mcp}hol_cursor_complete(session="default")` - saves proof, advances, enters goaltree for next
    - Repeat until all theorems done
-3. **Manual alternative** (for single theorems or advanced control):
-   - `{mcp}hol_start(workdir, name="main")` - start session explicitly
-   - `{mcp}hol_send(session="main", command='gt `goal`;')` - enter goaltree
-   - Copy p() output to file manually via Edit
+3. **Manual**: hol_start → hol_send('gt `goal`') → p() → Edit file
 4. **Verify**: `{mcp}holmake(workdir)` again
 5. **Iterate**: Until no cheats remain
 
 ## Critical Rules
 
-1. NEVER GIVE UP - keep trying different approaches forever
-2. If stuck on one approach for 10+ attempts, try a different strategy
-3. Helper lemmas are your friend - break big proofs into smaller ones
-4. `gvs[AllCaseEqs()]` can be too aggressive - sometimes `fs[]` or `simp[]` is better
-5. For induction, make sure IH is applicable (check variable names)
-6. If tactic runs >15 seconds, use hol_interrupt and try different approach
-7. NEVER delete working proof code - if adding cheat, comment out original proof first
-8. Periodically clean task file: delete outdated handoffs, stale notes, superseded info
+1. NEVER GIVE UP - if stuck 10+ attempts, switch strategy
+2. `gvs[AllCaseEqs()]` can be aggressive - try `fs[]` or `simp[]` instead
+3. For induction, verify IH is applicable (check variable names)
+4. NEVER delete working proof code - comment out before adding cheat
+5. Periodically clean task file: delete outdated handoffs, stale notes
 
 ## Recovery
 
-If context seems lost:
-1. Check ## Handoff section in first message above
-2. `{mcp}hol_cursor_init(file)` - auto-starts session, positions at first cheat
-3. `{mcp}holmake(workdir)` to see what's failing
-4. `{mcp}hol_cursor_reenter(session)` to retry current theorem after drop()
+If context lost: Check Handoff section above, then `hol_cursor_init(file)` or `holmake(workdir)` to assess state.
 
 BEGIN NOW.

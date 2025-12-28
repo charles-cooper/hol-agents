@@ -117,65 +117,14 @@ Parent Task: "Write sketch for big_theorem"
 └── Subtask 4: "Integration and cleanup"
 ```
 
-### Self-Assessment Questions
+### Self-Assessment
 
-Before proceeding with any task, answer:
-
-1. **Scope check**: "What exactly am I producing in this task?"
-2. **Size check**: "Will the output fit comfortably in ~200-300 lines?"
-3. **Coherence check**: "Can I hold the entire plan excerpt in mind while writing?"
-4. **Dependency check**: "Do I need outputs from other subtasks first?"
-
-If any answer is uncertain → **split first**.
+Before proceeding, verify: (1) scope is clear, (2) output fits ~200-300 lines, (3) can hold plan in mind, (4) no blocking dependencies. If uncertain → **split first**.
 
 ### Anti-Pattern: The Monolithic Attempt
 
-❌ **BAD**: Trying to write the entire sketch in one go, running out of context halfway through, producing inconsistent or incomplete output.
-
-✓ **GOOD**: Splitting into 4-6 focused subtasks, each producing a clean fragment, then integrating.
-
-### Example: Splitting a Complex Theorem
-
-**Task**: Write sketch for `tree_valid` (induction over tree structure with multiple node types)
-
-**Assessment**:
-- Plan has 5 helper lemmas → split helpers into subtasks
-- Main proof has 4 case branches → split cases into subtasks
-- Expected output > 400 lines → definitely split
-
-**Split**:
-```
-Subtask 1: "Preliminary lemmas"
-  - SIZE_positive, DEPTH_bounded
-  - Output: ~30 lines
-
-Subtask 2: "foo_APPEND helper"
-  - Statement + cheated proof + usage comment
-  - Output: ~20 lines
-
-Subtask 3: "Main theorem - base cases"
-  - Leaf, Empty, simple constructors
-  - Output: ~40 lines
-
-Subtask 4: "Main theorem - Node case, left branch"
-  - Full structure with cheated subgoals
-  - Output: ~60 lines
-
-Subtask 5: "Main theorem - Node case, right branch"
-  - Full structure with cheated subgoals
-  - Output: ~50 lines
-
-Subtask 6: "Main theorem - special cases"
-  - Structure for edge cases and boundary conditions
-  - Output: ~50 lines
-
-Subtask 7: "Integration"
-  - Combine all fragments
-  - Verify compilation
-  - Output: combined file + compilation status
-```
-
-Each subtask is now tractable within a single context window.
+❌ Trying to write entire sketch at once → context exhaustion, inconsistent output
+✓ Split into 4-6 focused subtasks, integrate at end
 
 ## Output: The Proof Sketch
 
@@ -342,44 +291,19 @@ Every theorem must have:
 The mathematical justification is critical - it captures the planner's verified reasoning so that whoever fills in the proof understands the intended argument.
 
 ```sml
-(* Flattening then taking preserves elements: TAKE n (FLAT xss) relates to original structure.
+(* TAKE n (FLAT xss) relates to original structure.
 
    WHY THIS IS TRUE:
-   FLAT concatenates all sublists in order. TAKE n selects the first n elements.
-   If n ≤ SUM (MAP LENGTH xss), we get exactly the first n elements from the
-   concatenated lists. The key insight is that FLAT preserves element order,
-   so TAKE operates on a predictable sequence.
+   FLAT concatenates sublists in order. TAKE n selects first n elements.
+   If n ≤ SUM (MAP LENGTH xss), we get exactly the first n elements.
+   FLAT preserves order, so TAKE operates on a predictable sequence.
 
-   Plan reference: Step 2 of inductive case - "Extract prefix from flattened list"
+   Plan reference: Step 2 of inductive case
    Used in: main_theorem, recursive branch *)
 Theorem TAKE_FLAT:
-  ∀n xss. n ≤ SUM (MAP LENGTH xss) ⇒
-          LENGTH (TAKE n (FLAT xss)) = n
+  ∀n xss. n ≤ SUM (MAP LENGTH xss) ⇒ LENGTH (TAKE n (FLAT xss)) = n
 Proof
   cheat (* TODO: Induction on xss, case split on n vs LENGTH (HD xss) *)
-QED
-```
-
-```sml
-(* Property P is preserved under appending - extra elements don't affect P.
-
-   WHY THIS IS TRUE:
-   P is defined by structural recursion on the input. For each case,
-   it examines only a fixed prefix determined by the structure:
-   - Base case: examines first k elements
-   - Recursive case: examines current element, then recurses on rest
-
-   The key insight is that P always terminates after examining a bounded prefix.
-   Any elements beyond this prefix are never examined, so appending arbitrary
-   elements at the end cannot affect whether P holds.
-
-   Plan reference: "Critical enabler - allows applying IH with extra elements"
-   Used in: main_theorem, both branches of the case split *)
-Theorem P_APPEND:
-  ∀xs ys. P xs ⇒ P (xs ++ ys)
-Proof
-  cheat (* TODO: Induction on the structure that P examines.
-           Each case shows recursive calls only examine prefixes. *)
 QED
 ```
 
@@ -478,66 +402,6 @@ Replace cheats in the following locations:
 ## Deliverables
 
 Return proofs for both theorems.
-```
-
-### Task File Example
-
-```markdown
-# TASK: P_APPEND - prefix preservation under append
-
-## Goal
-
-Replace the cheat in `P_APPEND` with a complete proof.
-
-## Theorem Statement
-
-```sml
-Theorem P_APPEND:
-  ∀xs ys. P xs ⇒ P (xs ++ ys)
-```
-
-## Location
-
-- File: `flatten_preserves_sketch.sml`
-- Line: ~618
-- Context: Key helper lemma used in main theorem's inductive case
-
-## Mathematical Argument
-
-**WHY THIS IS TRUE:**
-P is defined by structural recursion on the input. For each case,
-it examines only a fixed prefix determined by the structure:
-- Base case: examines first k elements
-- Recursive case: examines current element, then recurses on rest
-
-The key insight is that P always terminates after examining a bounded prefix.
-Any elements beyond this prefix are never examined, so appending arbitrary
-elements at the end cannot affect whether P holds.
-
-## Available Resources
-
-### Helper Lemmas Available
-- `P_def`: Definition of P (examine to see what prefix it checks)
-
-### Relevant Definitions
-- `P`: The property being preserved (defined in parent theory)
-
-## Proof Approach
-
-1. Examine `P_def` to understand what prefix P examines
-2. Induction on the structure that P recurses over
-3. For each case, show that `xs ++ ys` has the same prefix as `xs` for the portion P examines
-4. Conclude P (xs ++ ys) from P xs
-
-## Constraints
-
-- Output must be valid HOL4 tactic proof
-- Must not introduce new cheats
-- Proof should be 5-15 lines of tactics
-
-## Deliverable
-
-Replace the `cheat` with a complete proof.
 ```
 
 ## Main Theorem Proof Structure
@@ -728,38 +592,6 @@ open listTheory rich_listTheory;
 val _ = new_theory "flatten_preserves_sketch";
 
 (* ------------------------------------------------------------------------
-   Preliminary Lemmas: Properties used across multiple cases
-
-   WHY THESE ARE TRUE: See individual comments.
-   ------------------------------------------------------------------------ *)
-
-(* Length of FLAT is sum of lengths.
-
-   WHY THIS IS TRUE:
-   FLAT concatenates lists in order. Each sublist contributes its length
-   to the total. By induction, SUM (MAP LENGTH xss) counts every element.
-
-   Plan: "Establish before main induction" *)
-Theorem LENGTH_FLAT:
-  ∀xss. LENGTH (FLAT xss) = SUM (MAP LENGTH xss)
-Proof
-  cheat (* TODO: Induction on xss, use LENGTH_APPEND *)
-QED
-
-(* TAKE distributes over APPEND when n ≤ LENGTH of first list.
-
-   WHY THIS IS TRUE:
-   TAKE n (xs ++ ys) takes from xs first. If n ≤ LENGTH xs, we never
-   reach ys, so result is just TAKE n xs.
-
-   Plan: "Used in recursive case to isolate first sublist" *)
-Theorem TAKE_APPEND_LEQ:
-  ∀n xs ys. n ≤ LENGTH xs ⇒ TAKE n (xs ++ ys) = TAKE n xs
-Proof
-  cheat (* TODO: Induction on n, case split on xs *)
-QED
-
-(* ------------------------------------------------------------------------
    Key Helper: P is prefix-closed
 
    WHY THIS IS TRUE:
@@ -847,12 +679,8 @@ val _ = export_theory();
 
 ## Remember
 
-1. **The sketch must compile** - Invalid syntax or types defeat the purpose
-2. **Structure over completion** - A complete skeleton with cheats is more valuable than a partial proof
-3. **Comments are documentation** - They explain WHY, linking to the plan
-4. **Cheats are promises** - Each one is a task for the next stage
-5. **The main proof shows the architecture** - This is the primary deliverable
-6. **Split before you struggle** - If the task feels large, split it. Don't attempt monolithic output.
-7. **Each subtask = one context window** - This is non-negotiable. Recursive splitting is always available.
-8. **Every theorem needs "WHY THIS IS TRUE"** - The mathematical argument from the planner must be preserved in comments. Without this, the next agent filling in proofs is working blind.
-9. **Task files are subagent prompts** - Each cheat needs a corresponding task file with full context. The subagent should be able to work from the task file alone without reading the entire codebase.
+1. **Sketch must compile** with `Holmake` - structure is useless if it doesn't type-check
+2. **Every theorem needs "WHY THIS IS TRUE"** - preserve the planner's mathematical argument
+3. **Every cheat needs a task file** - self-contained prompt for subagents
+4. **Split if task won't fit one context window** - recursive splitting always available
+5. **Structure over completion** - a complete skeleton with cheats beats a partial proof
