@@ -224,18 +224,53 @@ python hol_pipeline.py --theorem enc_valid --workdir /path/to/project
 4. **Cursor workflow is primary** - init → (prove → complete) × N → done
 5. **Each phase is independently runnable** - User can control any phase manually
 
+## Detailed Component Recovery Prompts
+
+For implementation details sufficient to reconstruct each component:
+
+| Component | Recovery Prompt |
+|-----------|-----------------|
+| MCP Server | [mcp_server.md](mcp_server.md) - Tools, session registry, cursor tools |
+| HOL Session | [session.md](session.md) - Subprocess, null-byte framing, interrupt |
+| Proof Cursor | [cursor.md](cursor.md) - File parsing, splicing, tactic extraction |
+| Proof Agent | [proof_agent.md](proof_agent.md) - Forever loop, handoffs, state |
+| Planner | [planner.md](planner.md) - Thin wrapper for phase 1 |
+| Sketch | [sketch.md](sketch.md) - Thin wrapper for phase 2 |
+| Pipeline | [pipeline.md](pipeline.md) - End-to-end automation |
+
 ## Recreating This Repository
 
-To recreate this system from scratch:
+**Order of implementation:**
 
-1. **Start with the MCP server** - HOL subprocess management with null-byte framing, session registry, tools for send/interrupt/holmake
+1. **HOL Session** ([session.md](session.md))
+   - Null-byte framing with `hol --zero`
+   - Process group isolation for interrupt
+   - Load etq.sml for tactic extraction
 
-2. **Add cursor mechanism** - Parse SML files for theorems/cheats, track position, splice completed proofs
+2. **MCP Server** ([mcp_server.md](mcp_server.md))
+   - Session registry (in-memory dict)
+   - Tools: hol_start, hol_send, hol_interrupt, holmake
+   - Cursor tools: init, complete, status, reenter
 
-3. **Write the three methodology prompts** - Capture the rigor requirements for each phase (see prompts/hol4/*.md for full content)
+3. **Proof Cursor** ([cursor.md](cursor.md))
+   - Parse SML for Theorem/Triviality/Definition
+   - Track cheats, splice completed proofs
+   - Context loading for mid-file theorems
 
-4. **Create orchestrators** - Python scripts using Claude Agent SDK with prompts as system prompts
+4. **Methodology Prompts** (see `prompts/hol4/*.md`)
+   - Planner: mathematical rigor, validation subagents
+   - Sketch: hierarchical decomposition, task files
+   - Prover: goaltree workflow, complexity management
 
-5. **Add skills** - TUI entry points that inject the methodologies
+5. **Orchestrators** ([proof_agent.md](proof_agent.md), [planner.md](planner.md), [sketch.md](sketch.md))
+   - Proof agent: forever loop, handoffs, state persistence
+   - Planner/Sketch: thin wrappers, bounded tasks
 
-The methodology prompts are the core IP - they encode the proof development process. The infrastructure just provides different ways to execute them.
+6. **Pipeline** ([pipeline.md](pipeline.md))
+   - Chain phases: Plan → Sketch → Prove
+   - Support partial runs
+
+7. **Skills** (see `skills/hol4/*.md`)
+   - TUI entry points for interactive use
+
+**The methodology prompts are the core IP** - they encode the proof development process. The infrastructure provides different ways to execute them.
