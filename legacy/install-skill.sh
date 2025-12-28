@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_DIR="$SCRIPT_DIR/../skills/hol-script-legacy"
+SKILL_DIR="$SCRIPT_DIR/skills/hol-script-legacy"
 PROJECT_CLAUDE_DIR=".claude"
 TARGET_DIR="$PROJECT_CLAUDE_DIR/skills"
 
