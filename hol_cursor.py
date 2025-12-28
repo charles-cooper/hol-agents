@@ -83,6 +83,7 @@ class ProofCursor:
         self.theorems: list[TheoremInfo] = []
         self.position: int = 0
         self.completed: set[str] = set()
+        self._loaded_to_line: int = 0  # Track how much content is loaded
 
     def current(self) -> TheoremInfo | None:
         """Get current theorem."""
@@ -147,8 +148,26 @@ class ProofCursor:
         if prefix.strip():
             await self.session.send(prefix, timeout=300)
 
+        self._loaded_to_line = thm.start_line
         self.position = first_cheat_idx
         return f"Positioned at {thm.name} (line {thm.start_line})"
+
+    async def load_context_to(self, target_line: int) -> None:
+        """Load file content from current loaded position to target line."""
+        if target_line <= self._loaded_to_line:
+            return  # Already loaded
+
+        content = self.file.read_text()
+        lines = content.split('\n')
+
+        # Get content between loaded position and target
+        # _loaded_to_line is 1-indexed, we want lines from _loaded_to_line to target_line-1
+        additional = '\n'.join(lines[self._loaded_to_line:target_line - 1])
+
+        if additional.strip():
+            await self.session.send(additional, timeout=300)
+
+        self._loaded_to_line = target_line
 
     async def start_current(self) -> str:
         """Set up goaltree for current theorem, replay tactics to cheat point."""

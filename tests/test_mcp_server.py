@@ -208,3 +208,26 @@ async def test_cursor_goto(tmp_path):
         assert "Available cheats:" in result
     finally:
         await hol_stop(session="goto_test")
+
+
+async def test_cursor_goto_loads_context(tmp_path):
+    """Test that goto loads context (earlier theorems) when jumping forward."""
+    test_file = tmp_path / "testScript.sml"
+    shutil.copy(FIXTURES_DIR / "testScript.sml", test_file)
+
+    try:
+        # Init at first cheat (needs_proof at line 18)
+        await hol_cursor_init(file=str(test_file), session="ctx_test")
+
+        # Jump to second cheat (partial_proof at line 25)
+        # This should load add_zero theorem (lines 11-15) into context
+        await hol_cursor_goto(session="ctx_test", theorem_name="partial_proof")
+
+        # Verify add_zero is available in HOL context
+        result = await hol_send(session="ctx_test", command="add_zero;", timeout=10)
+        # Should return the theorem, not an error
+        assert "⊢" in result or "thm" in result.lower()
+        assert "not found" not in result.lower()
+        assert "error" not in result.lower()
+    finally:
+        await hol_stop(session="ctx_test")

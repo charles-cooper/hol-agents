@@ -426,6 +426,8 @@ async def hol_cursor_init(file: str, session: str = "default", workdir: str = No
         if not thm:
             available = [t.name for t in cursor.theorems if t.has_cheat]
             return f"ERROR: Theorem '{start_at}' not found.\nAvailable cheats: {', '.join(available)}"
+        # Load context up to target theorem
+        await cursor.load_context_to(thm.start_line)
         result = f"Positioned at {thm.name} (line {thm.start_line})"
 
     # Build status
@@ -514,6 +516,9 @@ async def hol_cursor_goto(session: str, theorem_name: str) -> str:
 
     if not thm.has_cheat:
         return f"WARNING: {theorem_name} has no cheat (already proved)."
+
+    # Load context up to target theorem
+    await cursor.load_context_to(thm.start_line)
 
     # Enter goaltree
     result = await cursor.start_current()
