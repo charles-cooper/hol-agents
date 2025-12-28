@@ -332,7 +332,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             hol_state += f"\n\n[auto] hol_cursor_status(\"{state.hol_session}\"):\n"
                             hol_state += f"File: {status['file']}\n"
                             hol_state += f"Position: {status['position']}, Current: {status['current']} (line {status['current_line']})\n"
-                            hol_state += f"Remaining cheats: {status['remaining_cheats']}"
+                            hol_state += f"Remaining cheats: {len(status['cheats'])}"
                         else:
                             hol_state += f"\n\n[auto] hol_cursor_status(\"{state.hol_session}\"): (none)"
 

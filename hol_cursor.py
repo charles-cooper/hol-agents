@@ -212,15 +212,16 @@ class ProofCursor:
     def status(self) -> dict:
         """Get cursor status."""
         current = self.current()
-        remaining = sum(
-            1 for t in self.theorems
+        cheats = [
+            {"name": t.name, "line": t.start_line}
+            for t in self.theorems
             if t.has_cheat and t.name not in self.completed
-        )
+        ]
         return {
             "file": str(self.file),
             "current": current.name if current else None,
             "current_line": current.start_line if current else None,
             "position": f"{self.position + 1}/{len(self.theorems)}",
             "completed": list(self.completed),
-            "remaining_cheats": remaining,
+            "cheats": cheats,
         }

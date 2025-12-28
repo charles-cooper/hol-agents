@@ -385,11 +385,11 @@ async def hol_logs(workdir: str) -> str:
 
 
 @mcp.tool()
-async def hol_cursor_init(file: str, session: str = "default", workdir: str = None) -> str:
-    """Initialize cursor and start proving first theorem.
+async def hol_cursor_init(file: str, session: str = "default", workdir: str = None, start_at: str = None) -> str:
+    """Initialize cursor and start proving a theorem.
 
     Parses file, finds theorems with cheats, loads HOL context, and enters
-    goaltree mode for the first theorem with a cheat.
+    goaltree mode for the specified theorem (or first cheat if not specified).
 
     Auto-starts HOL session if needed.
 
@@ -397,6 +397,7 @@ async def hol_cursor_init(file: str, session: str = "default", workdir: str = No
         file: Path to .sml file containing theorems
         session: Session name (default: "default")
         workdir: Working directory for HOL (default: file's parent directory)
+        start_at: Theorem name to start at (default: first cheat)
 
     Returns: Status showing current position, theorems found, and current goals
     """
@@ -419,6 +420,14 @@ async def hol_cursor_init(file: str, session: str = "default", workdir: str = No
 
     _sessions[session].cursor = cursor
 
+    # Jump to specific theorem if requested
+    if start_at:
+        thm = cursor.goto(start_at)
+        if not thm:
+            available = [t.name for t in cursor.theorems if t.has_cheat]
+            return f"ERROR: Theorem '{start_at}' not found.\nAvailable cheats: {', '.join(available)}"
+        result = f"Positioned at {thm.name} (line {thm.start_line})"
+
     # Build status
     status = cursor.status
     lines = [
@@ -426,7 +435,7 @@ async def hol_cursor_init(file: str, session: str = "default", workdir: str = No
         "",
         f"File: {status['file']}",
         f"Theorems: {status['position']}",
-        f"Remaining cheats: {status['remaining_cheats']}",
+        f"Remaining cheats: {len(status['cheats'])}",
     ]
 
     if status['current']:
@@ -452,7 +461,7 @@ async def hol_cursor_status(session: str) -> str:
     Args:
         session: Session name
 
-    Returns: Current theorem, position, completed list, remaining cheats
+    Returns: Current theorem, position, completed list, all remaining cheats
     """
     cursor = _get_cursor(session)
     if not cursor:
@@ -464,9 +473,53 @@ async def hol_cursor_status(session: str) -> str:
         f"Position: {status['position']}",
         f"Current: {status['current']} (line {status['current_line']})" if status['current'] else "Current: None",
         f"Completed: {', '.join(status['completed']) or 'None'}",
-        f"Remaining cheats: {status['remaining_cheats']}",
+        "",
+        f"Remaining cheats ({len(status['cheats'])}):",
     ]
+    for c in status['cheats']:
+        marker = " <--" if c['name'] == status['current'] else ""
+        lines.append(f"  {c['name']} (line {c['line']}){marker}")
     return "\n".join(lines)
+
+
+@mcp.tool()
+async def hol_cursor_goto(session: str, theorem_name: str) -> str:
+    """Jump to specific theorem by name and enter goaltree.
+
+    Use to skip ahead or go back to a different cheat.
+    Drops current proof state before jumping.
+
+    Args:
+        session: Session name
+        theorem_name: Name of theorem to jump to
+
+    Returns: Theorem info and current goals
+    """
+    cursor = _get_cursor(session)
+    if not cursor:
+        return f"ERROR: No cursor for session '{session}'. Use hol_cursor_init() first."
+
+    s = _get_session(session)
+    if not s or not s.is_running:
+        return f"ERROR: Session '{session}' is not running."
+
+    # Drop current proof state
+    await s.send("drop();", timeout=5)
+
+    # Jump to theorem
+    thm = cursor.goto(theorem_name)
+    if not thm:
+        available = [t.name for t in cursor.theorems if t.has_cheat]
+        return f"ERROR: Theorem '{theorem_name}' not found.\nAvailable cheats: {', '.join(available)}"
+
+    if not thm.has_cheat:
+        return f"WARNING: {theorem_name} has no cheat (already proved)."
+
+    # Enter goaltree
+    result = await cursor.start_current()
+    goals = await s.send("top_goals();", timeout=10)
+
+    return f"Jumped to {theorem_name} (line {thm.start_line})\n{result}\n\n=== Current goals ===\n{goals}"
 
 
 @mcp.tool()
@@ -524,7 +577,7 @@ async def hol_cursor_complete(session: str) -> str:
     lines = [
         result,
         "",
-        f"Remaining cheats: {status['remaining_cheats']}",
+        f"Remaining cheats: {len(status['cheats'])}",
     ]
 
     if status['current']:

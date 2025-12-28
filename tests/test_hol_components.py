@@ -252,6 +252,53 @@ def test_proof_cursor_next_cheat():
     assert cursor.next_cheat().name == "c"
 
 
+def test_proof_cursor_goto():
+    """Test ProofCursor.goto jumps to theorem by name."""
+    session = Mock()
+    cursor = ProofCursor(Path("/tmp/test.sml"), session)
+    cursor.theorems = [
+        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False, [], []),
+        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True, [], []),
+        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True, [], []),
+    ]
+    cursor.position = 0
+
+    # Jump to c
+    thm = cursor.goto("c")
+    assert thm.name == "c"
+    assert cursor.position == 2
+
+    # Jump back to a
+    thm = cursor.goto("a")
+    assert thm.name == "a"
+    assert cursor.position == 0
+
+    # Non-existent returns None
+    assert cursor.goto("nonexistent") is None
+    assert cursor.position == 0  # unchanged
+
+
+def test_proof_cursor_status_cheats():
+    """Test ProofCursor.status includes all cheats with positions."""
+    session = Mock()
+    cursor = ProofCursor(Path("/tmp/test.sml"), session)
+    cursor.theorems = [
+        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False, [], []),
+        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True, [], []),
+        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True, [], []),
+        TheoremInfo("d", "Theorem", "S", 30, 32, 34, True, [], []),
+    ]
+    cursor.position = 1  # at b
+    cursor.completed = {"c"}
+
+    status = cursor.status
+    assert status["current"] == "b"
+    assert status["cheats"] == [
+        {"name": "b", "line": 10},
+        {"name": "d", "line": 30},
+    ]  # c excluded (completed), a excluded (no cheat)
+
+
 def test_atomic_write():
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "test.txt"
