@@ -27,7 +27,8 @@ class SessionEntry:
     holmake_env: Optional[dict] = None  # env vars for holmake (auto-captured on success)
 
 
-mcp = FastMCP("hol")
+mcp = FastMCP("hol", instructions="""HOL4 theorem prover.
+holmake: build. hol_start/hol_send: interactive. hol_cursor_*: file-based proofs.""")
 _sessions: dict[str, SessionEntry] = {}
 
 
@@ -130,14 +131,14 @@ async def hol_sessions() -> str:
 
 @mcp.tool()
 async def hol_send(session: str, command: str, timeout: int = 5) -> str:
-    """Send SML code to HOL.
+    """Send SML to HOL.
 
-    Args:
-        session: Session name from hol_start
-        command: SML code to execute
-        timeout: Max seconds to wait (default 120, max 600)
+      gt `goal`;         (* start proof - not g *)
+      etq "tactic";      (* apply - not e, records for p() *)
+      p();               (* extract proof script *)
+      backup(); drop();  (* undo / abandon *)
 
-    Returns: HOL output
+    Args: session, command, timeout (default 5, max 600)
     """
     s = _get_session(session)
     if not s:
