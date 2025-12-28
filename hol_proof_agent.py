@@ -292,7 +292,7 @@ def build_system_prompt(config: AgentConfig) -> str:
     """Build static system prompt from template file."""
     # Find template relative to this script
     script_dir = Path(__file__).parent
-    template_path = script_dir / "prompts" / "hol4_proof_agent.template.md"
+    template_path = script_dir / "prompts" / "hol4" / "proof_agent.template.md"
     template = read_file(str(template_path))
 
     if not template:
