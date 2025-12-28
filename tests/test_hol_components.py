@@ -10,7 +10,7 @@ from hol_file_parser import (
     parse_theorems, parse_file, splice_into_theorem, parse_p_output,
     _parse_tactics_before_cheat, TheoremInfo,
 )
-from hol_cursor import ProofCursor, atomic_write
+from hol_cursor import ProofCursor, atomic_write, get_executable_content, get_script_dependencies
 from hol_session import HOLSession
 from hol_proof_agent import is_allowed_command, get_large_files
 
@@ -321,6 +321,86 @@ async def test_proof_cursor_start_current():
             # Verify goaltree is active
             state = await session.send("top_goals();", timeout=10)
             assert "goal" in state.lower() or "+" in state  # Goals present
+
+
+def test_get_executable_content_raw_sml():
+    """Test get_executable_content with raw SML file (no Theory header)."""
+    content = '''(* Comment *)
+open HolKernel boolLib;
+
+Definition foo_def:
+  foo x = x + 1
+End
+
+Theorem bar:
+  foo 0 = 1
+Proof
+  rw[foo_def]
+QED
+'''
+    # Get content up to line 8 (before Theorem bar on line 8)
+    result = get_executable_content(content, 8)
+    assert "open HolKernel" in result
+    assert "Definition foo_def" in result
+    assert "Theorem bar" not in result
+
+
+def test_get_executable_content_script_format():
+    """Test get_executable_content skips Theory/Ancestors header."""
+    content = '''Theory myTheory
+Ancestors
+  listTheory arithmeticTheory
+
+(* First executable content *)
+Definition foo_def:
+  foo x = x + 1
+End
+
+Theorem bar:
+  foo 0 = 1
+Proof
+  cheat
+QED
+'''
+    # Get content up to line 11 (Theorem bar)
+    result = get_executable_content(content, 11)
+    assert "Theory myTheory" not in result
+    assert "Ancestors" not in result
+    assert "listTheory" not in result
+    assert "(* First executable content *)" in result
+    assert "Definition foo_def" in result
+
+
+def test_get_executable_content_multiline_ancestors():
+    """Test get_executable_content with multi-line Ancestors."""
+    content = '''Theory bigTheory
+Ancestors
+  list rich_list
+  arithmetic prim_rec
+  set pred_set
+
+(* Start here *)
+val x = 1;
+'''
+    result = get_executable_content(content, 10)
+    assert "Theory" not in result
+    assert "Ancestors" not in result
+    assert "list rich_list" not in result
+    assert "(* Start here *)" in result
+
+
+@pytest.mark.asyncio
+async def test_get_script_dependencies():
+    """Test get_script_dependencies with fixture file."""
+    fixture = FIXTURES_DIR / "testScript.sml"
+    if not fixture.exists():
+        pytest.skip("Fixture not found")
+
+    deps = await get_script_dependencies(fixture)
+    # Should return list of dependencies
+    assert isinstance(deps, list)
+    # Basic HOL deps should be present
+    assert any("HolKernel" in d or "boolLib" in d for d in deps)
 
 
 # =============================================================================
