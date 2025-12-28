@@ -47,17 +47,28 @@ Send SML to HOL. Returns output. Max timeout 600s.
 ### {mcp}hol_interrupt(session: str) -> str
 Send SIGINT to abort runaway tactic. Use if command takes >15 seconds.
 
-### {mcp}holmake(workdir: str, target: str = None, timeout: int = 90) -> str
+### {mcp}holmake(workdir: str, target: str = None, env: dict = None, timeout: int = 90) -> str
 Run Holmake --qof. Returns output + build logs on failure. Max timeout 1800s.
+- `env`: Optional environment variables (e.g. `{{"HOLDIR": "/path"}}`)
+
+### {mcp}hol_log(workdir: str, theory: str, limit: int = 1024) -> str
+Read build log for a specific theory. Use after holmake failure to inspect errors.
+
+### {mcp}hol_logs(workdir: str) -> str
+List available build logs with sizes and modification times.
 
 ### {mcp}hol_sessions() -> str
-List active sessions with workdir, age, status.
+List active sessions with workdir, age, status, cursor.
+
+### {mcp}hol_stop(session: str) -> str
+Terminate HOL session. Use to clean up dead sessions.
 
 ### {mcp}hol_restart(session: str) -> str
 Restart session (stop + start, preserves workdir). Use when HOL state is corrupted.
 
 ### Cursor Tools (RECOMMENDED entry point)
-- `{mcp}hol_cursor_init(file, session="default", workdir=None)` - Auto-start session, parse file, enter goaltree and show output of top_goals()
+- `{mcp}hol_cursor_init(file, session="default", workdir=None, start_at=None)` - Auto-start session, parse file, enter goaltree. `start_at`: jump to specific theorem
+- `{mcp}hol_cursor_goto(session, theorem_name)` - Jump to specific theorem and enter goaltree (drops current proof)
 - `{mcp}hol_cursor_complete(session)` - Extract p(), splice into file, advance, enter goaltree for next
 - `{mcp}hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
 - `{mcp}hol_cursor_reenter(session)` - Re-enter goaltree after drop() or to retry

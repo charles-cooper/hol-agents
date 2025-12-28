@@ -68,27 +68,52 @@ def hol_restart(session: str) -> str:
 
 ```python
 @mcp.tool()
-def holmake(workdir: str, target: str = "", timeout: int = 90) -> str:
+def holmake(workdir: str, target: str = None, env: dict = None, timeout: int = 90) -> str:
     """Run Holmake --qof in workdir.
 
+    Args:
+        env: Optional environment variables (e.g. {"MY_VAR": "/path"})
     Max timeout 1800s.
-    On failure: return output + contents of .hollogs/*.log
-    Caches env vars (HOLDIR, etc.) for reuse.
+    On failure: return output + contents of .hol/logs/*.log
+    Caches env vars for reuse.
     """
+
+@mcp.tool()
+def hol_log(workdir: str, theory: str, limit: int = 1024) -> str:
+    """Read build log for a specific theory.
+
+    Use after holmake failure to inspect errors in detail.
+    Returns tail if truncated.
+    """
+
+@mcp.tool()
+def hol_logs(workdir: str) -> str:
+    """List available build logs with sizes and modification times."""
 ```
 
 ### Cursor Tools (Recommended Entry Point)
 
 ```python
 @mcp.tool()
-def hol_cursor_init(file: str, session: str = "default", workdir: str = None) -> str:
+def hol_cursor_init(file: str, session: str = "default", workdir: str = None, start_at: str = None) -> str:
     """Initialize cursor-based workflow.
 
     1. Auto-start session if needed
     2. Parse file for theorems/cheats
-    3. Load HOL context up to first cheat
+    3. Load HOL context up to first cheat (or start_at if specified)
     4. Enter goaltree for first cheat
     5. Return top_goals() output
+
+    Args:
+        start_at: Optional theorem name to jump to instead of first cheat
+    """
+
+@mcp.tool()
+def hol_cursor_goto(session: str, theorem_name: str) -> str:
+    """Jump to specific theorem by name and enter goaltree.
+
+    Drops current proof state before jumping.
+    Use to skip ahead or go back to a different cheat.
     """
 
 @mcp.tool()
