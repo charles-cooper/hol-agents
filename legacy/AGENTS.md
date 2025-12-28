@@ -1,4 +1,6 @@
-# HOL Agent Helper - Contributor Guide
+# HOL Agent Helper - Contributor Guide (Legacy)
+
+> **Note:** This documents the legacy bash-based implementation. See the main [README.md](../README.md) for the current MCP-based architecture.
 
 Tool for AI agents to interactively develop HOL4 proofs. See SKILL.md for usage.
 
