@@ -14,7 +14,7 @@ ETQ_PATH = Path(__file__).parent / "sml_helpers" / "etq.sml"
 class HOLSession:
     """Direct HOL subprocess management with clean interrupt support."""
 
-    def __init__(self, workdir: str):
+    def __init__(self, workdir: str = "."):
         self.workdir = Path(workdir)
         self.process: Optional[asyncio.subprocess.Process] = None
         self._buffer = b""
