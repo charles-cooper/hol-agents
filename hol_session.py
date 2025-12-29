@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import signal
 import time
 from pathlib import Path
@@ -10,12 +11,21 @@ from typing import Optional
 HOLDIR = Path(os.environ.get("HOLDIR", Path.home() / "HOL"))
 ETQ_PATH = Path(__file__).parent / "sml_helpers" / "etq.sml"
 
+# ANSI escape sequence pattern (colors, cursor movement, etc.)
+_ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    return _ANSI_ESCAPE_RE.sub('', text)
+
 
 class HOLSession:
     """Direct HOL subprocess management with clean interrupt support."""
 
-    def __init__(self, workdir: str = "."):
+    def __init__(self, workdir: str = ".", strip_ansi: bool = True):
         self.workdir = Path(workdir)
+        self.strip_ansi = strip_ansi
         self.process: Optional[asyncio.subprocess.Process] = None
         self._buffer = b""
 
@@ -99,7 +109,8 @@ class HOLSession:
 
             parts = self._buffer.split(b'\0')
             self._buffer = b""
-            return "\n".join(p.decode() for p in parts if p)
+            result = "\n".join(p.decode() for p in parts if p)
+            return strip_ansi(result) if self.strip_ansi else result
 
         return await asyncio.wait_for(read_loop(), timeout=timeout)
 
