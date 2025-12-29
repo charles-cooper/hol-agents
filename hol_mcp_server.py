@@ -140,8 +140,9 @@ async def hol_sessions() -> str:
 async def hol_send(session: str, command: str, timeout: int = 5) -> str:
     """Send SML to HOL.
 
-      gt `goal`;         (* start proof - not g *)
-      etq "tactic";      (* apply - not e, records for p() *)
+    NEVER use g/e (goalstack). ALWAYS use gt/etq (goaltree):
+      gt `goal`;         (* start proof *)
+      etq "tactic";      (* apply tactic, records for p() *)
       p();               (* extract proof script *)
       backup(); drop();  (* undo / abandon *)
 
@@ -544,8 +545,8 @@ async def hol_cursor_goto(session: str, theorem_name: str) -> str:
 async def hol_cursor_reenter(session: str) -> str:
     """Re-enter goaltree for current theorem.
 
-    Use after drop() or to retry a failed proof attempt.
-    Does NOT advance to next theorem - just re-enters goaltree for current.
+    Drops ALL goaltrees (clears any stacked from manual gt calls), then
+    re-enters goaltree. Use to retry a proof from scratch.
 
     Args:
         session: Session name
@@ -572,7 +573,9 @@ async def hol_cursor_reenter(session: str) -> str:
 async def hol_cursor_complete(session: str) -> str:
     """Complete current theorem and start proving next.
 
-    Extracts proof from p(), splices into file replacing cheat,
+    Call when proof is done (no goals remaining). Do NOT call drop() or
+    edit file manually before this - the tool handles everything:
+    extracts proof from p(), splices into file replacing cheat,
     advances to next theorem with cheat, and enters goaltree for it.
 
     Args:

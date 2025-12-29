@@ -84,6 +84,8 @@ class ProofCursor:
     def complete_and_advance(self, session: HOLSession) -> str:
         """Finish current, move to next.
 
+        Call when proof is done (no goals left). Do NOT drop() or edit
+        file manually before calling - this handles everything:
         1. Call p() to extract proof
         2. Parse p() output to get tactics
         3. Splice into file (replace cheat)
@@ -96,7 +98,8 @@ class ProofCursor:
     def reenter(self, session: HOLSession) -> str:
         """Re-enter goaltree for current theorem.
 
-        Used after drop() or failed attempt.
+        Drops ALL goaltrees (clears any stacked from manual gt calls),
+        then re-enters goaltree to retry from scratch.
         """
 
     @property
@@ -120,8 +123,8 @@ cursor_init(file)
          ▼
 ┌─────────────────┐     ┌─────────────────┐
 │ Prove with etq  │────▶│ cursor_complete │
-│ Check p()       │     │ Splice to file  │
-│ backup() if bad │     │ Advance         │
+│ backup() if bad │     │ (calls p()      │
+│ until no goals  │     │  splices file)  │
 └─────────────────┘     └────────┬────────┘
          ▲                       │
          │                       │

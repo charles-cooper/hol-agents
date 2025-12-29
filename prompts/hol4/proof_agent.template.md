@@ -69,24 +69,24 @@ Restart session (stop + start, preserves workdir). Use when HOL state is corrupt
 ### Cursor Tools (RECOMMENDED entry point)
 - `{mcp}hol_cursor_init(file, session="default", workdir=None, start_at=None)` - Auto-start session, parse file, enter goaltree. `start_at`: jump to specific theorem
 - `{mcp}hol_cursor_goto(session, theorem_name)` - Jump to specific theorem and enter goaltree (drops current proof)
-- `{mcp}hol_cursor_complete(session)` - Extract p(), splice into file, advance, enter goaltree for next
+- `{mcp}hol_cursor_complete(session)` - **Call when proof done (no goals left).** Internally calls p(), edits file, advances to next theorem. **Do NOT drop() or edit file manually before calling.**
 - `{mcp}hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
-- `{mcp}hol_cursor_reenter(session)` - Re-enter goaltree after drop() or to retry
+- `{mcp}hol_cursor_reenter(session)` - **Drops ALL goaltrees** (clears any stacked), re-enters to retry from scratch
 
-Cursor workflow: init → (prove → complete) × N → done
+Cursor workflow: init → (prove until no goals → complete) × N → done
 
 ## Goaltree Mode (Interactive Proving)
 
-Always use goaltree mode (`gt`/`etq`) - it records tactics for extraction:
+**NEVER use g/e (goalstack). ALWAYS use gt/etq (goaltree)** - it records tactics for extraction:
 
 | Command | Purpose |
 |---------|---------|
 | gt `tm` | Start proof (goaltree mode) |
 | `etq "tac"` | Apply tactic (records for extraction) |
-| `p()` | Show proof tree - copy directly to Theorem block |
+| `p()` | Show proof tree (for debugging - cursor_complete calls this internally) |
 | `b()` / `backup()` | Undo last tactic |
 | `top_goals()` | List remaining goals |
-| `drop()` | Abandon proof |
+| `drop()` | Abandon proof (cursor_reenter drops ALL stacked goaltrees) |
 
 ## Subgoal Patterns
 

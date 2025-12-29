@@ -120,6 +120,8 @@ def hol_cursor_goto(session: str, theorem_name: str) -> str:
 def hol_cursor_complete(session: str) -> str:
     """Complete current theorem, advance to next.
 
+    Call when proof is done (no goals remaining). Do NOT call drop() or
+    edit file manually before this - the tool handles everything:
     1. Extract proof via p()
     2. Splice tactics into file (replace cheat)
     3. Advance to next cheat
@@ -133,7 +135,7 @@ def hol_cursor_status(session: str) -> str:
 
 @mcp.tool()
 def hol_cursor_reenter(session: str) -> str:
-    """Re-enter goaltree after drop() or to retry current theorem."""
+    """Drops ALL goaltrees (clears any stacked), re-enters to retry from scratch."""
 ```
 
 ## Key Behaviors
