@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import re
 import tempfile
 from pathlib import Path
 
@@ -32,34 +31,14 @@ async def get_script_dependencies(script_path: Path) -> list[str]:
 
 
 def get_executable_content(content: str, up_to_line: int) -> str:
-    """Extract executable SML content from script, skipping Theory/Ancestors header.
+    """Extract SML content from script up to specified line.
 
-    For script format files, skips the Theory/Ancestors declarations.
-    Returns content from line 1 to up_to_line-1.
+    Returns content from line 1 to up_to_line-1, including any
+    Theory/Ancestors/Libs header (which sets up the environment).
     """
     lines = content.split('\n')
     prefix_lines = lines[:up_to_line - 1]
-
-    # Check for script format and find where executable content starts
-    in_header = False
-    start_idx = 0
-
-    for i, line in enumerate(prefix_lines):
-        stripped = line.strip()
-        if stripped.startswith('Theory '):
-            in_header = True
-        elif in_header and stripped and not stripped[0].isspace() and not stripped.startswith('Ancestors'):
-            # First non-indented, non-Ancestors line after Theory = end of header
-            # But check if it's still part of Ancestors (multi-line)
-            if not re.match(r'^\s*\w+(\s+\w+)*\s*$', stripped):
-                start_idx = i
-                break
-        elif in_header and stripped.startswith('(*'):
-            # Comment after header = start of executable content
-            start_idx = i
-            break
-
-    return '\n'.join(prefix_lines[start_idx:])
+    return '\n'.join(prefix_lines)
 
 
 def atomic_write(path: Path, content: str) -> None:
