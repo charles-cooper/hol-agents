@@ -14,13 +14,13 @@
 
 val _ = load "smlExecute";
 
-fun print_goal g =
-  HOLPP.prettyPrint (print, !Globals.linewidth) (goalStack.pp_goal g);
+(* Print just goal conclusion, not assumptions - keeps output small *)
+fun print_goal_concl (_, g) = print (Parse.term_to_string g ^ "\n");
 
 fun print_goals [] = print "Goal proved.\n"
-  | print_goals [g] = print_goal g
+  | print_goals [g] = (print "1 goal:\n"; print_goal_concl g)
   | print_goals (g::gs) =
-      (print (Int.toString (1 + length gs) ^ " subgoals:\n\n"); print_goal g);
+      (print (Int.toString (1 + length gs) ^ " goals. First:\n"); print_goal_concl g);
 
 fun etq_tmo timeout s =
   let
