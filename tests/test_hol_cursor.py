@@ -261,3 +261,37 @@ QED
         assert "ERROR" in result
         assert "modified" in result.lower()
         assert "foo" in result  # mentions the theorem
+
+
+@pytest.mark.asyncio
+async def test_complete_and_advance_rejects_error_output():
+    """Test complete_and_advance doesn't splice p() error output into file."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        original = """open HolKernel boolLib;
+
+Theorem foo:
+  T
+Proof
+  cheat
+QED
+"""
+        test_file.write_text(original)
+
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+            await cursor.start_current()
+
+            # Agent abandons the proof
+            await session.send("drop();")
+
+            # Now complete_and_advance calls p() which errors
+            result = await cursor.complete_and_advance()
+
+            # Should return error, not splice
+            assert "ERROR" in result
+            assert "No proof found" in result
+
+            # File should be unchanged
+            assert test_file.read_text() == original

@@ -186,7 +186,13 @@ def parse_p_output(output: str) -> str | None:
     > p();
     tac1 \\ tac2 >- (...) ...
     val it = () : unit
+
+    Returns None if output contains errors or no valid tactic script.
     """
+    # Reject error output before parsing
+    if 'Exception' in output or 'HOL_ERR' in output or 'No goalstack' in output:
+        return None
+
     lines = output.split('\n')
     tactic_lines = []
 

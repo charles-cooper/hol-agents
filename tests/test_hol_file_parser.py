@@ -152,3 +152,10 @@ def test_parse_p_output_empty():
 
 def test_parse_p_output_only_prompts():
     assert parse_p_output("> p();\nval it = () : unit\n") is None
+
+
+def test_parse_p_output_error():
+    """Error output should return None, not be spliced as tactics."""
+    error_output = """No goalstack is currently being managed.
+Exception- HOL_ERR at proofManagerLib.p: raised"""
+    assert parse_p_output(error_output) is None
