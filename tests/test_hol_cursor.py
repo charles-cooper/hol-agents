@@ -104,7 +104,7 @@ QED
 
 
 def test_get_executable_content_script_format():
-    """Test get_executable_content skips Theory/Ancestors header."""
+    """Test get_executable_content includes Theory/Ancestors header."""
     content = '''Theory myTheory
 Ancestors
   listTheory arithmeticTheory
@@ -120,17 +120,20 @@ Proof
   cheat
 QED
 '''
-    # Get content up to line 11 (Theorem bar)
-    result = get_executable_content(content, 11)
-    assert "Theory myTheory" not in result
-    assert "Ancestors" not in result
-    assert "listTheory" not in result
+    # Get content up to line 10 (Theorem bar starts on line 10)
+    result = get_executable_content(content, 10)
+    # Header is now included (sets up environment)
+    assert "Theory myTheory" in result
+    assert "Ancestors" in result
+    assert "listTheory" in result
     assert "(* First executable content *)" in result
     assert "Definition foo_def" in result
+    # But not the theorem we're about to prove
+    assert "Theorem bar" not in result
 
 
 def test_get_executable_content_multiline_ancestors():
-    """Test get_executable_content with multi-line Ancestors."""
+    """Test get_executable_content includes multi-line Ancestors header."""
     content = '''Theory bigTheory
 Ancestors
   list rich_list
@@ -141,9 +144,10 @@ Ancestors
 val x = 1;
 '''
     result = get_executable_content(content, 10)
-    assert "Theory" not in result
-    assert "Ancestors" not in result
-    assert "list rich_list" not in result
+    # Header is now included (sets up environment)
+    assert "Theory" in result
+    assert "Ancestors" in result
+    assert "list rich_list" in result
     assert "(* Start here *)" in result
 
 
