@@ -30,6 +30,13 @@ class SessionEntry:
 mcp = FastMCP("hol", instructions="""HOL4 theorem prover.
 holmake: build. hol_start/hol_send: interactive. hol_cursor_*: file-based proofs.""")
 _sessions: dict[str, SessionEntry] = {}
+_agent_state = None  # Set by proof_agent for direct holmake_env capture
+
+
+def set_agent_state(state) -> None:
+    """Register agent state for holmake_env capture. No-op if different process."""
+    global _agent_state
+    _agent_state = state
 
 
 def _get_session(name: str) -> Optional[HOLSession]:
@@ -277,10 +284,15 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
         output = stdout.decode("utf-8", errors="replace")
 
         if proc.returncode == 0:
-            # Store env in matching session entries for auto-holmake at startup
-            for entry in _sessions.values():
-                if entry.workdir == workdir_path:
-                    entry.holmake_env = env
+            if env:
+                # Store env in matching session entries for auto-holmake at startup
+                for entry in _sessions.values():
+                    if entry.workdir == workdir_path:
+                        entry.holmake_env = env
+                # Direct capture to agent state (same-process only)
+                if _agent_state is not None:
+                    _agent_state.holmake_env = env
+                    _agent_state.save()
             return f"Build succeeded.\n\n{output}"
 
         # Build failed - append relevant logs

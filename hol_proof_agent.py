@@ -21,7 +21,7 @@ from claude_agent_sdk import (
 )
 
 # Import MCP server instance - allows HOL sessions to persist across handoffs
-from hol_mcp_server import mcp as hol_mcp, _sessions, hol_sessions, hol_send, holmake
+from hol_mcp_server import mcp as hol_mcp, _sessions, hol_sessions, hol_send, holmake, set_agent_state
 
 
 # =============================================================================
@@ -267,6 +267,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
     # Load previous state
     state = AgentState.load(config.state_path)
+    set_agent_state(state)  # Enable direct holmake_env capture
 
     print(f"[AGENT] Starting (handoff every {config.max_agent_messages} messages)...")
 

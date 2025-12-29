@@ -16,6 +16,7 @@ from hol_mcp_server import (
     hol_cursor_init as _hol_cursor_init,
     hol_cursor_status as _hol_cursor_status,
     hol_cursor_goto as _hol_cursor_goto,
+    set_agent_state,
 )
 
 # Unwrap FunctionTool to get actual functions
@@ -135,6 +136,36 @@ async def test_log_nonexistent(workdir):
     result = await hol_log(workdir=workdir, theory="nonexistent")
     assert "Log not found: nonexistent" in result
     assert "Available:" in result
+
+
+async def test_holmake_env_capture(workdir, tmp_path):
+    """Test that holmake captures env to agent state on success."""
+    from hol_proof_agent import AgentState
+
+    state_file = tmp_path / "state.json"
+    state = AgentState(path=str(state_file))
+    set_agent_state(state)
+
+    try:
+        # Build with env - should capture and persist
+        test_env = {"TEST_VAR": "test_value"}
+        result = await holmake(workdir=workdir, target="testTheory", env=test_env)
+        assert "Build succeeded" in result
+        assert state.holmake_env == test_env
+        assert state_file.exists()
+
+        # Reload from disk to verify persistence
+        reloaded = AgentState.load(str(state_file))
+        assert reloaded.holmake_env == test_env
+
+        # Build without env - should NOT overwrite
+        state_file.unlink()
+        result = await holmake(workdir=workdir, target="testTheory", env=None)
+        assert "Build succeeded" in result
+        assert state.holmake_env == test_env  # unchanged
+        assert not state_file.exists()  # save not called
+    finally:
+        set_agent_state(None)
 
 
 # =============================================================================
