@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from hol_session import HOLSession
+from hol_session import HOLSession, escape_sml_string
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -85,3 +85,43 @@ async def test_hol_session_post_interrupt_sync():
         for i in range(5):
             result = await session.send(f'{100 + i};', timeout=10)
             assert str(100 + i) in result, f"Expected {100+i} after interrupt, got: {result}"
+
+
+# Unit tests for escape_sml_string
+
+def test_escape_sml_string_backslash():
+    """Backslash should be doubled for SML string literal."""
+    assert escape_sml_string('/\\') == '/\\\\'
+    assert escape_sml_string('A /\\ B') == 'A /\\\\ B'
+
+
+def test_escape_sml_string_quote():
+    """Double quotes should be escaped."""
+    assert escape_sml_string('SPEC "x"') == 'SPEC \\"x\\"'
+
+
+def test_escape_sml_string_newline():
+    """Newlines should become \\n."""
+    assert escape_sml_string('foo\nbar') == 'foo\\nbar'
+
+
+def test_escape_sml_string_tab():
+    """Tabs should become \\t."""
+    assert escape_sml_string('foo\tbar') == 'foo\\tbar'
+
+
+def test_escape_sml_string_carriage_return():
+    """Carriage returns should become \\r."""
+    assert escape_sml_string('foo\rbar') == 'foo\\rbar'
+
+
+def test_escape_sml_string_combined():
+    """Test multiple escape sequences together."""
+    # /\ with newline and embedded quote
+    assert escape_sml_string('`T /\\ T`\nby SPEC "x"') == '`T /\\\\ T`\\nby SPEC \\"x\\"'
+
+
+def test_escape_sml_string_no_change():
+    """Regular strings pass through unchanged."""
+    assert escape_sml_string('simp[]') == 'simp[]'
+    assert escape_sml_string('strip_tac') == 'strip_tac'

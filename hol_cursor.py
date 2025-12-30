@@ -6,7 +6,22 @@ import tempfile
 from pathlib import Path
 
 from hol_file_parser import TheoremInfo, parse_file, splice_into_theorem, parse_p_output
-from hol_session import HOLSession, HOLDIR
+from hol_session import HOLSession, HOLDIR, escape_sml_string
+
+
+def _parse_sml_string(output: str) -> str:
+    """Extract string value from SML output like 'val it = "...": string'.
+
+    Returns the raw escaped content - DO NOT unescape, as we pass this
+    directly to another SML string literal (etq).
+    """
+    for line in output.split('\n'):
+        line = line.strip()
+        if line.startswith('val it = "') and '": string' in line:
+            start = line.index('"') + 1
+            end = line.rindex('": string')
+            return line[start:end]  # Keep SML escaping intact
+    return ""
 
 
 async def get_script_dependencies(script_path: Path) -> list[str]:
@@ -174,14 +189,21 @@ class ProofCursor:
         if 'Exception' in result or 'error' in result.lower():
             return f"ERROR setting up goal: {result[:500]}"
 
-        # Replay tactics before cheat
-        for tac in thm.tactics_before_cheat:
-            tac_result = await self.session.send(f'etq "{tac}";', timeout=60)
-            if 'Exception' in tac_result:
-                return f"ERROR replaying tactic '{tac}': {tac_result[:300]}"
+        # Get pre-cheat tactics using TacticParse (preserves >- structure)
+        if thm.has_cheat and thm.proof_body:
+            escaped_body = escape_sml_string(thm.proof_body)
+            extract_result = await self.session.send(
+                f'extract_before_cheat "{escaped_body}";', timeout=30
+            )
+            # Parse SML string result: val it = "...": string
+            before_cheat = _parse_sml_string(extract_result)
+            if before_cheat:
+                tac_result = await self.session.send(f'etq "{before_cheat}";', timeout=300)
+                if 'Exception' in tac_result:
+                    return f"ERROR replaying tactics: {tac_result[:300]}"
+                return f"Ready: {thm.name} (pre-cheat tactics replayed)"
 
-        replayed = len(thm.tactics_before_cheat)
-        return f"Ready: {thm.name} ({replayed} tactics replayed)"
+        return f"Ready: {thm.name}"
 
     async def complete_and_advance(self) -> str:
         """Splice completed proof into file, advance to next cheat."""
@@ -195,6 +217,22 @@ class ProofCursor:
 
         if not tactic_script:
             return f"ERROR: No proof found. Output:\n{p_output}"
+
+        # Reject proofs with <anonymous> tactics (agent used e() instead of etq)
+        if "<anonymous>" in tactic_script:
+            return (
+                "ERROR: Proof contains <anonymous> tactics. "
+                "Use etq instead of e() to record tactic names."
+            )
+
+        # Validate tactic syntax via TacticParse before splicing
+        escaped = escape_sml_string(tactic_script)
+        validate_result = await self.session.send(
+            f'(TacticParse.parseTacticBlock "{escaped}"; "OK") handle _ => "PARSE_ERROR";',
+            timeout=10
+        )
+        if "PARSE_ERROR" in validate_result or "Exception" in validate_result:
+            return f"ERROR: Invalid tactic syntax, cannot splice:\n{tactic_script[:500]}"
 
         # Check for external modifications before writing
         if self._check_stale():

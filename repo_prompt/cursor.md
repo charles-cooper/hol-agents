@@ -13,10 +13,11 @@ class TheoremInfo:
     kind: str                    # "Theorem", "Triviality", "Definition"
     goal: str                    # The goal term (backquoted)
     start_line: int              # Line number in file
-    end_line: int                # End of QED
+    proof_start_line: int        # Line of "Proof"
+    proof_end_line: int          # Line of "QED"
     has_cheat: bool              # Contains cheat in proof
-    tactics_before_cheat: str    # Tactics to replay before cheat point
-    full_proof: str              # Complete proof text
+    proof_body: str = ""         # Content between Proof and QED
+    attributes: list[str] = []   # e.g. ["simp", "local"]
 ```
 
 ## File Parser
@@ -77,8 +78,10 @@ class ProofCursor:
         """Enter goaltree for current theorem.
 
         1. gt `goal`
-        2. Replay tactics_before_cheat via etq
-        3. Return top_goals()
+        2. Use TacticParse (via extract_before_cheat SML helper) to find
+           pre-cheat tactics, preserving original structure (>-, >>, \\)
+        3. Replay as single etq call (not split into parts)
+        4. Return status
         """
 
     def complete_and_advance(self, session: HOLSession) -> str:
@@ -147,6 +150,8 @@ The cursor tracks what's been loaded to avoid re-loading.
 
 - Parsing uses regex for Theorem/Triviality/Definition blocks
 - Cheat detection looks for literal `cheat` in proof body
-- tactics_before_cheat captures partial proofs (up to cheat point)
+- Pre-cheat extraction uses TacticParse (SML) to correctly find cheat in AST
+  - Preserves original tactic structure (>-, >>, \\)
+  - See sml_helpers/cheat_finder.sml
 - Splicing preserves indentation and file structure
 - p() output format depends on etq.sml implementation
