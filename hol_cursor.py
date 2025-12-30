@@ -17,10 +17,13 @@ def _parse_sml_string(output: str) -> str:
     """
     for line in output.split('\n'):
         line = line.strip()
-        if line.startswith('val it = "') and '": string' in line:
-            start = line.index('"') + 1
-            end = line.rindex('": string')
-            return line[start:end]  # Keep SML escaping intact
+        if line.startswith('val it = "'):
+            # Handle both 'val it = "...": string' and 'val it = "..." : string'
+            for suffix in ['": string', '" : string']:
+                if suffix in line:
+                    start = line.index('"') + 1
+                    end = line.rindex(suffix)
+                    return line[start:end]  # Keep SML escaping intact
     return ""
 
 
@@ -226,7 +229,7 @@ class ProofCursor:
             before_cheat = _parse_sml_string(extract_result)
             if before_cheat:
                 tac_result = await self.session.send(f'etq "{before_cheat}";', timeout=300)
-                if 'Exception' in tac_result:
+                if _is_hol_error(tac_result):
                     return f"ERROR replaying tactics: {tac_result[:300]}"
                 return f"Ready: {thm.name} (pre-cheat tactics replayed)"
 

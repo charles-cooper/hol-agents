@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 
 from hol_session import HOLSession, escape_sml_string
-from hol_cursor import _is_hol_error
+from hol_cursor import _is_hol_error, _parse_sml_string
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -167,3 +167,13 @@ def test_is_hol_error_detects_timeout():
     """_is_hol_error catches TIMEOUT strings from send()."""
     assert _is_hol_error("TIMEOUT after 30s - sent interrupt.")
     assert _is_hol_error("TIMEOUT after 5s - sent interrupt.\npartial output")
+
+
+def test_parse_sml_string_with_space():
+    """_parse_sml_string handles space before colon."""
+    # No space before colon
+    assert _parse_sml_string('val it = "hello": string') == "hello"
+    # Space before colon (Poly/ML format)
+    assert _parse_sml_string('val it = "hello" : string') == "hello"
+    # With escapes
+    assert _parse_sml_string('val it = "a\\\\b": string') == "a\\\\b"
