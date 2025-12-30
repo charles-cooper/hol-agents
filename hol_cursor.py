@@ -6,7 +6,57 @@ import tempfile
 from pathlib import Path
 
 from hol_file_parser import TheoremInfo, parse_file, splice_into_theorem, parse_p_output
-from hol_session import HOLSession, HOLDIR
+from hol_session import HOLSession, HOLDIR, escape_sml_string
+
+
+def _parse_sml_string(output: str) -> str:
+    """Extract string value from SML output like 'val it = "...": string'.
+
+    Returns the raw escaped content - DO NOT unescape, as we pass this
+    directly to another SML string literal (etq).
+    """
+    for line in output.split('\n'):
+        line = line.strip()
+        if line.startswith('val it = "'):
+            # Handle both 'val it = "...": string' and 'val it = "..." : string'
+            for suffix in ['": string', '" : string']:
+                if suffix in line:
+                    start = line.index('"') + 1
+                    end = line.rindex(suffix)
+                    return line[start:end]  # Keep SML escaping intact
+    return ""
+
+
+def _is_hol_error(output: str) -> bool:
+    """Check if HOL output indicates an actual error (not just a warning).
+
+    Returns True for real errors like:
+    - SML exceptions ("Exception-", "raised exception")
+    - HOL errors ("HOL_ERR")
+    - Poly/ML errors ("poly: : error:")
+    - Tactic failures ("Fail ")
+    - TIMEOUT strings from HOL session
+
+    Returns False for:
+    - HOL warnings/messages ("<<HOL message:", "<<HOL warning:")
+    - The word "error" appearing in goal terms (e.g., "error_state")
+    """
+    if output.startswith("TIMEOUT"):
+        return True
+    if output.lstrip().startswith("ERROR:") or output.lstrip().startswith("Error:"):
+        return True
+    if "Exception" in output:
+        return True
+    if "HOL_ERR" in output:
+        return True
+    if "poly: : error:" in output.lower():
+        return True
+    if "raised exception" in output.lower():
+        return True
+    # Tactic Fail with message
+    if "\nFail " in output or output.startswith("Fail "):
+        return True
+    return False
 
 
 async def get_script_dependencies(script_path: Path) -> list[str]:
@@ -171,17 +221,24 @@ class ProofCursor:
         goal = thm.goal.replace('\n', ' ').strip()
         result = await self.session.send(f'gt `{goal}`;', timeout=30)
 
-        if 'Exception' in result or 'error' in result.lower():
+        if _is_hol_error(result):
             return f"ERROR setting up goal: {result[:500]}"
 
-        # Replay tactics before cheat
-        for tac in thm.tactics_before_cheat:
-            tac_result = await self.session.send(f'etq "{tac}";', timeout=60)
-            if 'Exception' in tac_result:
-                return f"ERROR replaying tactic '{tac}': {tac_result[:300]}"
+        # Get pre-cheat tactics using TacticParse (preserves >- structure)
+        if thm.has_cheat and thm.proof_body:
+            escaped_body = escape_sml_string(thm.proof_body)
+            extract_result = await self.session.send(
+                f'extract_before_cheat "{escaped_body}";', timeout=30
+            )
+            # Parse SML string result: val it = "...": string
+            before_cheat = _parse_sml_string(extract_result)
+            if before_cheat:
+                tac_result = await self.session.send(f'etq "{before_cheat}";', timeout=300)
+                if _is_hol_error(tac_result):
+                    return f"ERROR replaying tactics: {tac_result[:300]}"
+                return f"Ready: {thm.name} (pre-cheat tactics replayed)"
 
-        replayed = len(thm.tactics_before_cheat)
-        return f"Ready: {thm.name} ({replayed} tactics replayed)"
+        return f"Ready: {thm.name}"
 
     async def complete_and_advance(self) -> str:
         """Splice completed proof into file, advance to next cheat."""
@@ -196,12 +253,28 @@ class ProofCursor:
         if not tactic_script:
             return f"ERROR: No proof found. Output:\n{p_output}"
 
-        # Check for external modifications before writing
+        # Reject proofs with <anonymous> tactics (agent used e() instead of etq)
+        if "<anonymous>" in tactic_script:
+            return (
+                "ERROR: Proof contains <anonymous> tactics. "
+                "Use etq instead of e() to record tactic names."
+            )
+
+        # Check for external modifications before validation (more important error)
         if self._check_stale():
             return (
                 f"ERROR: File modified since cursor initialized. "
                 f"Proof for {thm.name} NOT saved. Reinitialize cursor to continue."
             )
+
+        # Validate tactic syntax via TacticParse before splicing
+        escaped = escape_sml_string(tactic_script)
+        validate_result = await self.session.send(
+            f'(TacticParse.parseTacticBlock "{escaped}"; "OK") handle _ => "PARSE_ERROR";',
+            timeout=10
+        )
+        if "PARSE_ERROR" in validate_result or _is_hol_error(validate_result):
+            return f"ERROR: Invalid tactic syntax, cannot splice:\n{tactic_script[:500]}"
 
         # Splice into file
         content = self.file.read_text()

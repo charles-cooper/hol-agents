@@ -14,28 +14,30 @@ from hol_session import HOLSession
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def test_proof_cursor_next_cheat():
+@pytest.fixture
+def mock_theorems():
+    """Common TheoremInfo list for cursor unit tests."""
+    return [
+        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False),
+        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True),
+        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True),
+    ]
+
+
+def test_proof_cursor_next_cheat(mock_theorems):
     session = Mock()
     cursor = ProofCursor(Path("/tmp/test.sml"), session)
-    cursor.theorems = [
-        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False, [], []),
-        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True, [], []),
-        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True, [], []),
-    ]
+    cursor.theorems = mock_theorems
     cursor.position = 0
     cursor.completed = {"b"}
     assert cursor.next_cheat().name == "c"
 
 
-def test_proof_cursor_goto():
+def test_proof_cursor_goto(mock_theorems):
     """Test ProofCursor.goto jumps to theorem by name."""
     session = Mock()
     cursor = ProofCursor(Path("/tmp/test.sml"), session)
-    cursor.theorems = [
-        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False, [], []),
-        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True, [], []),
-        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True, [], []),
-    ]
+    cursor.theorems = mock_theorems
     cursor.position = 0
 
     # Jump to c
@@ -53,16 +55,11 @@ def test_proof_cursor_goto():
     assert cursor.position == 0  # unchanged
 
 
-def test_proof_cursor_status_cheats():
+def test_proof_cursor_status_cheats(mock_theorems):
     """Test ProofCursor.status includes all cheats with positions."""
     session = Mock()
     cursor = ProofCursor(Path("/tmp/test.sml"), session)
-    cursor.theorems = [
-        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False, [], []),
-        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True, [], []),
-        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True, [], []),
-        TheoremInfo("d", "Theorem", "S", 30, 32, 34, True, [], []),
-    ]
+    cursor.theorems = mock_theorems + [TheoremInfo("d", "Theorem", "S", 30, 32, 34, True)]
     cursor.position = 1  # at b
     cursor.completed = {"c"}
 
@@ -252,7 +249,7 @@ QED
         cursor = ProofCursor(test_file, session)
         cursor._file_mtime = test_file.stat().st_mtime
         cursor.theorems = [
-            TheoremInfo("foo", "Theorem", "T", 2, 4, 6, True, [], []),
+            TheoremInfo("foo", "Theorem", "T", 2, 4, 6, True),
         ]
         cursor.position = 0
 
@@ -299,3 +296,199 @@ QED
 
             # File should be unchanged
             assert test_file.read_text() == original
+
+
+@pytest.mark.asyncio
+async def test_complete_and_advance_rejects_anonymous():
+    """Test complete_and_advance rejects proofs with <anonymous> tactics."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        test_file.write_text("""open HolKernel boolLib;
+
+Theorem foo:
+  T
+Proof
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+            await cursor.start_current()
+
+            # Use e() instead of etq - loses tactic name
+            await session.send("e(REWRITE_TAC[]);")
+
+            result = await cursor.complete_and_advance()
+
+            assert "ERROR" in result
+            assert "anonymous" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_complete_and_advance_validates_with_tacticparse():
+    """Test complete_and_advance validates tactic syntax via TacticParse."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        test_file.write_text("""open HolKernel boolLib;
+
+Theorem foo:
+  T
+Proof
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+            await cursor.start_current()
+
+            # Complete the proof properly
+            await session.send('etq "REWRITE_TAC[]";')
+
+            result = await cursor.complete_and_advance()
+
+            # Should succeed - valid tactic syntax
+            assert "Completed" in result or "no more cheats" in result
+
+
+@pytest.mark.asyncio
+async def test_tactics_before_cheat_subgoal_replay():
+    """Test that >- structured tactics replay correctly."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        # A proof with >- structure
+        test_file.write_text("""open HolKernel boolLib bossLib;
+
+Theorem conj_swap:
+  A /\\ B ==> B /\\ A
+Proof
+  strip_tac >- simp[] \\\\
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+
+            # Check what tactics were parsed
+            thm = cursor.current()
+            assert thm.name == "conj_swap"
+
+            # Start current replays tactics
+            result = await cursor.start_current()
+
+            # Check the goaltree state after replay
+            p_output = await session.send("p();")
+
+            # The key question: does p() show the original structure?
+            # If we split on >-, the structure will be wrong
+            print(f"Proof body: {thm.proof_body}")
+            print(f"p() output: {p_output}")
+
+            # Verify >- is preserved (not converted to \\)
+            assert ">-" in p_output, f"Expected >- in output, got: {p_output}"
+
+
+@pytest.mark.asyncio
+async def test_cheat_finder_no_exhaustivity_warnings():
+    """Test that cheat_finder.sml loads without pattern match warnings."""
+    with tempfile.TemporaryDirectory() as d:
+        async with HOLSession(d) as session:
+            # Session start loads cheat_finder.sml - check no warnings in output
+            # by re-loading and checking output
+            cheat_finder = Path(__file__).parent.parent / "sml_helpers" / "cheat_finder.sml"
+            result = await session.send(cheat_finder.read_text(), timeout=30)
+            # Poly/ML warnings contain "Warning:" for non-exhaustive matches
+            assert "Warning" not in result, f"Got warnings: {result}"
+            assert "warning" not in result.lower() or "dropWhile" in result, f"Got warnings: {result}"
+
+
+@pytest.mark.asyncio
+async def test_extract_before_cheat_edge_cases():
+    """Test extract_before_cheat handles various edge cases."""
+    with tempfile.TemporaryDirectory() as d:
+        async with HOLSession(d) as session:
+            async def extract(s: str) -> str:
+                escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+                result = await session.send(f'extract_before_cheat "{escaped}";')
+                # Parse val it = "...": string
+                for line in result.split('\n'):
+                    if 'val it = "' in line and '": string' in line:
+                        start = line.index('"') + 1
+                        end = line.rindex('": string')
+                        return line[start:end].replace("\\\\", "\\")
+                return ""
+
+            # Basic: each operator type
+            assert await extract("cheat") == ""
+            assert await extract("simp[] \\\\ cheat") == "simp[]"
+            assert await extract("simp[] \\\\ CHEAT") == "simp[]"
+            assert await extract("strip_tac >> cheat") == "strip_tac"
+            assert await extract("rw[] >- cheat") == "rw[]"
+
+            # Multiple cheats - extracts before FIRST
+            assert await extract("simp[] \\\\ cheat \\\\ gvs[] \\\\ cheat") == "simp[]"
+
+            # Nested structure
+            assert await extract("(strip_tac \\\\ simp[]) \\\\ cheat") == "(strip_tac \\\\ simp[])"
+
+            # Chained subgoals and mixed operators
+            assert await extract("conj_tac >- simp[] >- cheat") == "conj_tac >- simp[]"
+            assert await extract("a >> b \\\\ c >- d >> cheat") == "a >> b \\\\ c >- d"
+
+            # Empty input
+            assert await extract("") == "" and await extract("   ") == ""
+
+            # "cheat" in identifier/backquote (should find real cheat tactic)
+            assert await extract("simp[cheat_def] \\\\ cheat") == "simp[cheat_def]"
+            assert await extract("foo `cheat` \\\\ cheat") == "foo `cheat`"
+
+            # Embedded quotes (must stay escaped for etq)
+            result = await extract('rename1 "x" \\\\ cheat')
+            assert 'rename1' in result and 'x' in result
+
+            # Known limitation: SML keywords (if/case/fn) in backquotes break TacticParse
+            assert await extract("qexists_tac `if x then y else z` \\\\ cheat") == ""
+            assert await extract("foo `case x of _ => y` \\\\ cheat") == ""
+            assert await extract("foo `fn x => x` \\\\ cheat") == ""
+            assert await extract("qexists_tac `x` \\\\ cheat") == "qexists_tac `x`"  # simple backquote works
+
+            # Test cases for nested structures - should return empty (invalid prefix)
+            assert await extract("strip_tac >- (simp[] \\\\ cheat)") == ""
+            assert await extract("(a >- b >- cheat)") == ""
+
+
+@pytest.mark.asyncio
+async def test_start_current_with_backslash_tactic():
+    """Test tactics with /\\ in terms are escaped properly for etq."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        # A proof with /\ in the goal (requires escaping for SML strings)
+        test_file.write_text("""open HolKernel boolLib bossLib;
+
+Theorem conj_true:
+  T /\\ T
+Proof
+  simp[] \\\\
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+
+            # Check theorem was found
+            thm = cursor.current()
+            assert thm.name == "conj_true"
+
+            # start_current should work - the /\ in the goal needs escaping
+            result = await cursor.start_current()
+
+            # Should not error - if escaping fails, we'd see an SML parse error
+            assert "ERROR" not in result
+            assert "Ready" in result or "conj_true" in result
+
+            # Verify the pre-cheat tactic was replayed
+            p_output = await session.send("p();")
+            assert "simp" in p_output

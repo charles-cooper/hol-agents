@@ -15,7 +15,7 @@ class TheoremInfo:
     proof_start_line: int  # Line of "Proof"
     proof_end_line: int  # Line of "QED"
     has_cheat: bool
-    tactics_before_cheat: list[str] = field(default_factory=list)
+    proof_body: str = ""  # Content between Proof and QED
     attributes: list[str] = field(default_factory=list)
 
 
@@ -65,11 +65,6 @@ def parse_theorems(content: str) -> list[TheoremInfo]:
         # Check for cheat
         has_cheat = bool(re.search(r'\bcheat\b', proof_body, re.IGNORECASE))
 
-        # Parse tactics before cheat
-        tactics_before_cheat = []
-        if has_cheat:
-            tactics_before_cheat = _parse_tactics_before_cheat(proof_body)
-
         theorems.append(TheoremInfo(
             name=name,
             kind=kind,
@@ -78,63 +73,12 @@ def parse_theorems(content: str) -> list[TheoremInfo]:
             proof_start_line=proof_start_line,
             proof_end_line=proof_end_line,
             has_cheat=has_cheat,
-            tactics_before_cheat=tactics_before_cheat,
+            proof_body=proof_body.strip(),
             attributes=attributes,
         ))
 
     return theorems
 
-
-def _parse_tactics_before_cheat(proof_body: str) -> list[str]:
-    """Extract tactics before cheat, splitting on \\\\ at top level."""
-    # Find content before 'cheat'
-    cheat_match = re.search(r'\bcheat\b', proof_body, re.IGNORECASE)
-    if not cheat_match:
-        return []
-
-    before_cheat = proof_body[:cheat_match.start()]
-
-    # Split on \\ at top level (not inside parentheses)
-    tactics = []
-    current = ""
-    paren_depth = 0
-    i = 0
-
-    while i < len(before_cheat):
-        char = before_cheat[i]
-
-        if char == '(':
-            paren_depth += 1
-            current += char
-        elif char == ')':
-            paren_depth -= 1
-            current += char
-        elif char == '\\' and i + 1 < len(before_cheat) and before_cheat[i + 1] == '\\':
-            if paren_depth == 0:
-                tac = current.strip()
-                if tac:
-                    tactics.append(tac)
-                current = ""
-                i += 1  # Skip second backslash
-            else:
-                current += char
-        elif char == '>' and i + 1 < len(before_cheat) and before_cheat[i + 1] == '-':
-            # >- is a subgoal combinator, treat like \\
-            if paren_depth == 0:
-                tac = current.strip()
-                if tac:
-                    tactics.append(tac)
-                current = ""
-                i += 1  # Skip the -
-            else:
-                current += char
-        else:
-            current += char
-
-        i += 1
-
-    # Don't add final segment - it leads to cheat
-    return tactics
 
 def parse_file(path: Path) -> list[TheoremInfo]:
     """Parse .sml file, return all theorems."""
@@ -182,15 +126,22 @@ def _indent(text: str, prefix: str) -> str:
 def parse_p_output(output: str) -> str | None:
     """Extract tactic script from p() output.
 
-    p() output looks like:
-    > p();
-    tac1 \\ tac2 >- (...) ...
-    val it = () : unit
+    p() output formats:
+    1. Multi-line (proof in progress):
+       > p();
+       tac1 \\ tac2 >- (...) ...
+       val it = () : unit
+
+    2. Single-line (proof complete):
+       val it = REWRITE_TAC[]: proof
 
     Returns None if output contains errors or no valid tactic script.
     """
     # Reject error output before parsing
-    if 'Exception' in output or 'HOL_ERR' in output or 'No goalstack' in output:
+    stripped = output.lstrip()
+    if stripped.startswith('ERROR:') or stripped.startswith('Error:'):
+        return None
+    if 'Exception' in output or 'HOL_ERR' in output or 'No goalstack' in output or output.startswith('TIMEOUT'):
         return None
 
     lines = output.split('\n')
@@ -201,7 +152,14 @@ def parse_p_output(output: str) -> str | None:
         # Skip command echo and prompts
         if stripped.startswith('>') or stripped == 'p();':
             continue
-        # Stop at val binding
+        # Handle "val it = TACTIC: proof" format (completed proof)
+        if stripped.startswith('val it = ') and ': proof' in stripped:
+            tactic = stripped[len('val it = '):]
+            tactic = tactic.rsplit(': proof', 1)[0].strip()
+            if tactic:
+                return tactic
+            continue
+        # Stop at other val bindings
         if stripped.startswith('val '):
             break
         # Skip "OK" markers from goaltree

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from hol_file_parser import (
     parse_theorems, parse_file, splice_into_theorem, parse_p_output,
-    _parse_tactics_before_cheat,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -43,7 +42,7 @@ QED
     assert thms[0].kind == "Theorem"
     assert thms[0].has_cheat == True
     assert thms[0].attributes == ["simp"]
-    assert len(thms[0].tactics_before_cheat) >= 1
+    assert "rw[]" in thms[0].proof_body
 
     assert thms[1].name == "bar"
     assert thms[1].kind == "Triviality"
@@ -71,7 +70,7 @@ def test_parse_fixture_file():
 
     assert thms[2].name == "partial_proof"
     assert thms[2].has_cheat == True
-    assert len(thms[2].tactics_before_cheat) >= 1
+    assert thms[2].proof_body  # has content before cheat
 
     assert thms[4].name == "helper_lemma"
     assert thms[4].kind == "Triviality"
@@ -112,34 +111,6 @@ gvs[] \\
 simp[foo_def]'''
 
 
-def test_parse_tactics_before_cheat_basic():
-    result = _parse_tactics_before_cheat("rw[] \\\\ cheat")
-    assert result == ["rw[]"]
-
-
-def test_parse_tactics_before_cheat_multiple():
-    result = _parse_tactics_before_cheat("rw[] \\\\ gvs[] \\\\ cheat")
-    assert result == ["rw[]", "gvs[]"]
-
-
-def test_parse_tactics_before_cheat_nested_parens():
-    result = _parse_tactics_before_cheat("(rw[] \\\\ gvs[]) \\\\ cheat")
-    assert result == ["(rw[] \\\\ gvs[])"]
-
-
-def test_parse_tactics_before_cheat_subgoal():
-    result = _parse_tactics_before_cheat("rw[] >- gvs[] \\\\ cheat")
-    assert result == ["rw[]", "gvs[]"]
-
-
-def test_parse_tactics_before_cheat_empty():
-    assert _parse_tactics_before_cheat("cheat") == []
-
-
-def test_parse_tactics_before_cheat_no_cheat():
-    assert _parse_tactics_before_cheat("rw[]") == []
-
-
 def test_splice_into_theorem_not_found():
     content = 'Theorem foo:\n  P\nProof\n  cheat\nQED\n'
     with pytest.raises(ValueError, match="not found"):
@@ -159,3 +130,9 @@ def test_parse_p_output_error():
     error_output = """No goalstack is currently being managed.
 Exception- HOL_ERR at proofManagerLib.p: raised"""
     assert parse_p_output(error_output) is None
+
+
+def test_parse_p_output_error_prefix():
+    """ERROR: sentinel outputs should return None."""
+    assert parse_p_output("ERROR: HOL not running") is None
+    assert parse_p_output("Error: HOL not running") is None

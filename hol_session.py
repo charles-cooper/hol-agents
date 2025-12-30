@@ -9,7 +9,22 @@ from pathlib import Path
 from typing import Optional
 
 HOLDIR = Path(os.environ.get("HOLDIR", Path.home() / "HOL"))
-ETQ_PATH = Path(__file__).parent / "sml_helpers" / "etq.sml"
+SCRIPT_DIR = Path(__file__).parent
+ETQ_PATH = SCRIPT_DIR / "sml_helpers" / "etq.sml"
+
+
+def escape_sml_string(s: str) -> str:
+    """Escape a string for use in an SML string literal.
+
+    Handles backslashes (e.g., /\\ in HOL terms), quotes, and control chars.
+    """
+    # Backslash must be first (otherwise we'd double-escape)
+    s = s.replace('\\', '\\\\')
+    s = s.replace('"', '\\"')
+    s = s.replace('\n', '\\n')
+    s = s.replace('\t', '\\t')
+    s = s.replace('\r', '\\r')
+    return s
 
 # ANSI escape sequence pattern (colors, cursor movement, etc.)
 _ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
@@ -52,6 +67,14 @@ class HOLSession:
 
         # Load etq.sml (goaltree mode helpers)
         await self.send(ETQ_PATH.read_text(), timeout=30)
+
+        # Load TacticParse for tactic validation
+        await self.send('load "TacticParse";', timeout=30)
+
+        # Load cheat_finder for pre-cheat extraction
+        cheat_finder = SCRIPT_DIR / "sml_helpers" / "cheat_finder.sml"
+        if cheat_finder.exists():
+            await self.send(cheat_finder.read_text(), timeout=30)
 
         # Load .hol_init.sml if present
         init_file = self.workdir / ".hol_init.sml"
