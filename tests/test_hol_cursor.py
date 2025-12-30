@@ -14,28 +14,30 @@ from hol_session import HOLSession
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def test_proof_cursor_next_cheat():
-    session = Mock()
-    cursor = ProofCursor(Path("/tmp/test.sml"), session)
-    cursor.theorems = [
+@pytest.fixture
+def mock_theorems():
+    """Common TheoremInfo list for cursor unit tests."""
+    return [
         TheoremInfo("a", "Theorem", "P", 1, 3, 5, False),
         TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True),
         TheoremInfo("c", "Theorem", "R", 20, 22, 24, True),
     ]
+
+
+def test_proof_cursor_next_cheat(mock_theorems):
+    session = Mock()
+    cursor = ProofCursor(Path("/tmp/test.sml"), session)
+    cursor.theorems = mock_theorems
     cursor.position = 0
     cursor.completed = {"b"}
     assert cursor.next_cheat().name == "c"
 
 
-def test_proof_cursor_goto():
+def test_proof_cursor_goto(mock_theorems):
     """Test ProofCursor.goto jumps to theorem by name."""
     session = Mock()
     cursor = ProofCursor(Path("/tmp/test.sml"), session)
-    cursor.theorems = [
-        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False),
-        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True),
-        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True),
-    ]
+    cursor.theorems = mock_theorems
     cursor.position = 0
 
     # Jump to c
@@ -53,16 +55,11 @@ def test_proof_cursor_goto():
     assert cursor.position == 0  # unchanged
 
 
-def test_proof_cursor_status_cheats():
+def test_proof_cursor_status_cheats(mock_theorems):
     """Test ProofCursor.status includes all cheats with positions."""
     session = Mock()
     cursor = ProofCursor(Path("/tmp/test.sml"), session)
-    cursor.theorems = [
-        TheoremInfo("a", "Theorem", "P", 1, 3, 5, False),
-        TheoremInfo("b", "Theorem", "Q", 10, 12, 14, True),
-        TheoremInfo("c", "Theorem", "R", 20, 22, 24, True),
-        TheoremInfo("d", "Theorem", "S", 30, 32, 34, True),
-    ]
+    cursor.theorems = mock_theorems + [TheoremInfo("d", "Theorem", "S", 30, 32, 34, True)]
     cursor.position = 1  # at b
     cursor.completed = {"c"}
 
