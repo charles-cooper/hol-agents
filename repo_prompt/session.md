@@ -106,4 +106,5 @@ This allows `os.killpg(pgid, SIGINT)` to interrupt HOL without affecting the Pyt
 - The key insight is null-byte framing with `--zero` flag
 - Process group isolation is critical for interrupt handling
 - etq.sml must be loaded for goaltree mode to work properly
+- Goaltree has no rotate() - always works on leftmost goal. Use REVERSE tac or >- to control order.
 - Timeout uses interrupt, not kill - allows HOL to recover

@@ -88,6 +88,10 @@ Cursor workflow: init → (prove until no goals → complete) × N → done
 | `top_goals()` | List remaining goals |
 | `drop()` | Abandon proof (cursor_reenter drops ALL stacked goaltrees) |
 
+**No rotate():** Goaltree always works on the leftmost unsolved goal. `rotate()` is goalstack-only.
+- Use `REVERSE tac` to reverse subgoal order when applying a tactic
+- Structure proof with `>-` to handle goals in desired order
+
 ## Subgoal Patterns
 
 - `'tm' by tac` - prove tm, add as assumption

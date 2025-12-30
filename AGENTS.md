@@ -114,6 +114,10 @@ p();  (* Shows: strip_tac \\ conj_tac >- simp[] >- simp[] *)
 
 **Backtracking:** `backup()` removes last tactic from tree. `drop()` abandons proof entirely.
 
+**No rotate():** Goaltree always works on the leftmost unsolved goal. `rotate()` is not implemented. To work on goals in different order:
+- Use `REVERSE tac` to reverse subgoal order when applying a tactic
+- Structure proof with `>-` to handle goals in desired order
+
 ## State Persistence
 
 **Agent state:** `.claude/hol_agent_state.json`

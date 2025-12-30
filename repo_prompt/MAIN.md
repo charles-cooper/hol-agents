@@ -41,6 +41,7 @@ Autonomous HOL4 theorem proving using Claude as the reasoning engine. The system
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  hol --zero (null-byte framing)                      │   │
 │  │  Goaltree mode: gt, etq, p(), backup(), drop()       │   │
+│  │  (No rotate() - always works on leftmost goal)       │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
