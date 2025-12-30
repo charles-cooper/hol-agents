@@ -122,11 +122,50 @@ fun extract_before_cheat source =
         if s3 = s then s else clean s3
       end
 
+    (* Check if AST contains RepairGroup (unbalanced delimiters) or RepairEmpty *)
+    fun has_repair (TacticParse.RepairGroup _) = true
+      | has_repair (TacticParse.RepairEmpty _) = true
+      | has_repair (TacticParse.Then items) = List.exists has_repair items
+      | has_repair (TacticParse.ThenLT (base, arms)) =
+          has_repair base orelse List.exists has_repair arms
+      | has_repair (TacticParse.LThen (base, arms)) =
+          has_repair base orelse List.exists has_repair arms
+      | has_repair (TacticParse.First items) = List.exists has_repair items
+      | has_repair (TacticParse.LFirst items) = List.exists has_repair items
+      | has_repair (TacticParse.Group (_, _, inner)) = has_repair inner
+      | has_repair (TacticParse.Try inner) = has_repair inner
+      | has_repair (TacticParse.LTry inner) = has_repair inner
+      | has_repair (TacticParse.Repeat inner) = has_repair inner
+      | has_repair (TacticParse.LRepeat inner) = has_repair inner
+      | has_repair (TacticParse.LAllGoals inner) = has_repair inner
+      | has_repair (TacticParse.LHeadGoal inner) = has_repair inner
+      | has_repair (TacticParse.LLastGoal inner) = has_repair inner
+      | has_repair (TacticParse.LThenLT items) = List.exists has_repair items
+      | has_repair (TacticParse.LThen1 inner) = has_repair inner
+      | has_repair (TacticParse.LTacsToLT inner) = has_repair inner
+      | has_repair (TacticParse.LNullOk inner) = has_repair inner
+      | has_repair (TacticParse.LNthGoal (inner, _)) = has_repair inner
+      | has_repair (TacticParse.LFirstLT inner) = has_repair inner
+      | has_repair (TacticParse.LSplit (_, a, b)) =
+          has_repair a orelse has_repair b
+      | has_repair (TacticParse.LSelectThen (a, b)) =
+          has_repair a orelse has_repair b
+      | has_repair (TacticParse.List (_, items)) = List.exists has_repair items
+      | has_repair (TacticParse.MapEvery (_, items)) = List.exists has_repair items
+      | has_repair (TacticParse.MapFirst (_, items)) = List.exists has_repair items
+      | has_repair _ = false
+
   in
     case find_cheat_pos tree of
       NONE => ""  (* No cheat found *)
     | SOME pos =>
         if pos = 0 then ""
-        else clean (String.substring (source, 0, pos))
+        else
+          let val prefix = clean (String.substring (source, 0, pos))
+              val prefix_tree = TacticParse.parseTacticBlock prefix
+          in
+            (* Reject unbalanced syntax - prefix must parse without repair nodes *)
+            if has_repair prefix_tree then "" else prefix
+          end
   end
   handle _ => "";

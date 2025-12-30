@@ -453,6 +453,10 @@ async def test_extract_before_cheat_edge_cases():
             assert await extract("foo `fn x => x` \\\\ cheat") == ""
             assert await extract("qexists_tac `x` \\\\ cheat") == "qexists_tac `x`"  # simple backquote works
 
+            # Test cases for nested structures - should return empty (invalid prefix)
+            assert await extract("strip_tac >- (simp[] \\\\ cheat)") == ""
+            assert await extract("(a >- b >- cheat)") == ""
+
 
 @pytest.mark.asyncio
 async def test_start_current_with_backslash_tactic():
