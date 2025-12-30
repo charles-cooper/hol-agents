@@ -4,6 +4,7 @@ import pytest
 from pathlib import Path
 
 from hol_session import HOLSession, escape_sml_string
+from hol_cursor import _is_hol_error
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -125,3 +126,38 @@ def test_escape_sml_string_no_change():
     """Regular strings pass through unchanged."""
     assert escape_sml_string('simp[]') == 'simp[]'
     assert escape_sml_string('strip_tac') == 'strip_tac'
+
+
+# Tests for _is_hol_error with real HOL output
+
+async def test_is_hol_error_detects_syntax_error():
+    """Poly/ML syntax errors should be detected."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        result = await session.send('val x = ;', timeout=10)  # syntax error
+        assert _is_hol_error(result), f"Should detect syntax error: {result}"
+
+
+async def test_is_hol_error_detects_type_error():
+    """Poly/ML type errors should be detected."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        result = await session.send('val x : int = "hello";', timeout=10)
+        assert _is_hol_error(result), f"Should detect type error: {result}"
+
+
+async def test_is_hol_error_detects_exception():
+    """SML exceptions should be detected."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        result = await session.send('raise Fail "test";', timeout=10)
+        assert _is_hol_error(result), f"Should detect exception: {result}"
+
+
+async def test_is_hol_error_ignores_error_in_term():
+    """The word 'error' in a term should NOT trigger error detection."""
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Define a value with "error" in the name - this is valid SML
+        result = await session.send('val error_state = 42;', timeout=10)
+        assert not _is_hol_error(result), f"Should not flag 'error' in identifier: {result}"
+
+        # Use "error" in a HOL term
+        result = await session.send('val t = ``is_error x``;', timeout=10)
+        assert not _is_hol_error(result), f"Should not flag 'error' in term: {result}"

@@ -24,6 +24,30 @@ def _parse_sml_string(output: str) -> str:
     return ""
 
 
+def _is_hol_error(output: str) -> bool:
+    """Check if HOL output indicates an actual error (not just a warning).
+
+    Returns True for real errors like:
+    - SML exceptions ("Exception-", "raised exception")
+    - Poly/ML errors ("poly: : error:")
+    - Tactic failures ("Fail ")
+
+    Returns False for:
+    - HOL warnings/messages ("<<HOL message:", "<<HOL warning:")
+    - The word "error" appearing in goal terms (e.g., "error_state")
+    """
+    if "Exception" in output:
+        return True
+    if "poly: : error:" in output.lower():
+        return True
+    if "raised exception" in output.lower():
+        return True
+    # Tactic Fail with message
+    if "\nFail " in output or output.startswith("Fail "):
+        return True
+    return False
+
+
 async def get_script_dependencies(script_path: Path) -> list[str]:
     """Get dependencies using holdeptool.exe.
 
@@ -186,7 +210,7 @@ class ProofCursor:
         goal = thm.goal.replace('\n', ' ').strip()
         result = await self.session.send(f'gt `{goal}`;', timeout=30)
 
-        if 'Exception' in result or 'error' in result.lower():
+        if _is_hol_error(result):
             return f"ERROR setting up goal: {result[:500]}"
 
         # Get pre-cheat tactics using TacticParse (preserves >- structure)
