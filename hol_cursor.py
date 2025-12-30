@@ -43,6 +43,8 @@ def _is_hol_error(output: str) -> bool:
     """
     if output.startswith("TIMEOUT"):
         return True
+    if output.lstrip().startswith("ERROR:") or output.lstrip().startswith("Error:"):
+        return True
     if "Exception" in output:
         return True
     if "HOL_ERR" in output:

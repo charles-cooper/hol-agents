@@ -138,6 +138,9 @@ def parse_p_output(output: str) -> str | None:
     Returns None if output contains errors or no valid tactic script.
     """
     # Reject error output before parsing
+    stripped = output.lstrip()
+    if stripped.startswith('ERROR:') or stripped.startswith('Error:'):
+        return None
     if 'Exception' in output or 'HOL_ERR' in output or 'No goalstack' in output or output.startswith('TIMEOUT'):
         return None
 
