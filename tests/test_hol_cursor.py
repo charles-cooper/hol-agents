@@ -423,6 +423,7 @@ async def test_extract_before_cheat_edge_cases():
             # Basic: each operator type
             assert await extract("cheat") == ""
             assert await extract("simp[] \\\\ cheat") == "simp[]"
+            assert await extract("simp[] \\\\ CHEAT") == "simp[]"
             assert await extract("strip_tac >> cheat") == "strip_tac"
             assert await extract("rw[] >- cheat") == "rw[]"
 

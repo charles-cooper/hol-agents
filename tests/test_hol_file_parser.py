@@ -130,3 +130,9 @@ def test_parse_p_output_error():
     error_output = """No goalstack is currently being managed.
 Exception- HOL_ERR at proofManagerLib.p: raised"""
     assert parse_p_output(error_output) is None
+
+
+def test_parse_p_output_error_prefix():
+    """ERROR: sentinel outputs should return None."""
+    assert parse_p_output("ERROR: HOL not running") is None
+    assert parse_p_output("Error: HOL not running") is None

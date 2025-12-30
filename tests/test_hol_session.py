@@ -169,6 +169,12 @@ def test_is_hol_error_detects_timeout():
     assert _is_hol_error("TIMEOUT after 5s - sent interrupt.\npartial output")
 
 
+def test_is_hol_error_detects_error_prefix():
+    """_is_hol_error catches ERROR: sentinel outputs."""
+    assert _is_hol_error("ERROR: HOL not running")
+    assert _is_hol_error("Error: HOL not running")
+
+
 def test_parse_sml_string_with_space():
     """_parse_sml_string handles space before colon."""
     # No space before colon
