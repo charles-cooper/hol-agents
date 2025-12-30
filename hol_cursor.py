@@ -31,11 +31,14 @@ def _is_hol_error(output: str) -> bool:
     - SML exceptions ("Exception-", "raised exception")
     - Poly/ML errors ("poly: : error:")
     - Tactic failures ("Fail ")
+    - TIMEOUT strings from HOL session
 
     Returns False for:
     - HOL warnings/messages ("<<HOL message:", "<<HOL warning:")
     - The word "error" appearing in goal terms (e.g., "error_state")
     """
+    if output.startswith("TIMEOUT"):
+        return True
     if "Exception" in output:
         return True
     if "poly: : error:" in output.lower():

@@ -161,3 +161,9 @@ async def test_is_hol_error_ignores_error_in_term():
         # Use "error" in a HOL term
         result = await session.send('val t = ``is_error x``;', timeout=10)
         assert not _is_hol_error(result), f"Should not flag 'error' in term: {result}"
+
+
+def test_is_hol_error_detects_timeout():
+    """_is_hol_error catches TIMEOUT strings from send()."""
+    assert _is_hol_error("TIMEOUT after 30s - sent interrupt.")
+    assert _is_hol_error("TIMEOUT after 5s - sent interrupt.\npartial output")
