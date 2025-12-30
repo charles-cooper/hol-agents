@@ -32,6 +32,7 @@ def _is_hol_error(output: str) -> bool:
 
     Returns True for real errors like:
     - SML exceptions ("Exception-", "raised exception")
+    - HOL errors ("HOL_ERR")
     - Poly/ML errors ("poly: : error:")
     - Tactic failures ("Fail ")
     - TIMEOUT strings from HOL session
@@ -43,6 +44,8 @@ def _is_hol_error(output: str) -> bool:
     if output.startswith("TIMEOUT"):
         return True
     if "Exception" in output:
+        return True
+    if "HOL_ERR" in output:
         return True
     if "poly: : error:" in output.lower():
         return True
@@ -255,21 +258,21 @@ class ProofCursor:
                 "Use etq instead of e() to record tactic names."
             )
 
+        # Check for external modifications before validation (more important error)
+        if self._check_stale():
+            return (
+                f"ERROR: File modified since cursor initialized. "
+                f"Proof for {thm.name} NOT saved. Reinitialize cursor to continue."
+            )
+
         # Validate tactic syntax via TacticParse before splicing
         escaped = escape_sml_string(tactic_script)
         validate_result = await self.session.send(
             f'(TacticParse.parseTacticBlock "{escaped}"; "OK") handle _ => "PARSE_ERROR";',
             timeout=10
         )
-        if "PARSE_ERROR" in validate_result or "Exception" in validate_result:
+        if "PARSE_ERROR" in validate_result or _is_hol_error(validate_result):
             return f"ERROR: Invalid tactic syntax, cannot splice:\n{tactic_script[:500]}"
-
-        # Check for external modifications before writing
-        if self._check_stale():
-            return (
-                f"ERROR: File modified since cursor initialized. "
-                f"Proof for {thm.name} NOT saved. Reinitialize cursor to continue."
-            )
 
         # Splice into file
         content = self.file.read_text()

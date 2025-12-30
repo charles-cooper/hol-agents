@@ -19,8 +19,8 @@ fun extract_before_cheat source =
         String.substring (source, s, e - s)
       else ""
 
-    (* Check if this span contains "cheat" *)
-    fun is_cheat span = text_at span = "cheat"
+    (* Check if this span contains "cheat" (case-insensitive to match parser) *)
+    fun is_cheat span = String.map Char.toLower (text_at span) = "cheat"
 
     (* Find start position of first "cheat" in AST; returns NONE if not found *)
     fun find_cheat_pos (TacticParse.Opaque (_, span)) =
