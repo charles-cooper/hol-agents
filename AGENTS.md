@@ -64,13 +64,11 @@ Async subprocess wrapper for HOL4.
 
 Tracks position in an SML file, manages proof lifecycle.
 
-**Workflow:** `init → (prove until no goals → complete) × N`
+**Workflow:** `init → (prove until no goals → complete → splice → reenter) × N`
 
 1. `initialize(file)` - Parse file, find first cheat
-2. `start_current()` - Load context, enter goaltree for current theorem
-3. `complete_and_advance()` - Internally calls p(), splices into file, moves to next cheat. Do NOT drop() or edit file manually before calling.
-
-**Splicing:** `splice_into_theorem(content, theorem_name, tactics)` replaces the proof body while preserving structure.
+2. `start_current()` - Clear proof state, enter goaltree for current theorem
+3. `complete_and_advance()` - Extracts proof via p(), returns it. Agent must splice into file, then call `start_current()` (via `hol_cursor_reenter`) for next theorem.
 
 **Goaltree mode:** Uses `gt`/`etq`/`p()` instead of goalstack. `etq` records tactic names, `p()` extracts the proof script.
 

@@ -9,7 +9,9 @@ You are now operating as a **HOL4 Proof Agent**. Your task is to fill in cheats 
 3. Key workflow:
    - `hol_cursor_init(file)` - Start session, position at first cheat
    - `hol_send(session, "etq \"tactic\"")` - Apply tactics
-   - `hol_cursor_complete(session)` - Save proof, advance to next
+   - `hol_cursor_complete(session)` - Get proof script
+   - Edit file to splice proof in place of cheat()
+   - `hol_cursor_reenter(session)` - Set up next theorem
    - `holmake(workdir)` - Verify compilation
 
 ## Quick Reference

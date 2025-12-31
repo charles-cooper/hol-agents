@@ -128,9 +128,9 @@ legacy/                   # Previous bash-based implementation
 
 ### Cursor Tools (recommended workflow)
 - `hol_cursor_init(file, session)` - Parse file, enter goaltree at first cheat
-- `hol_cursor_complete(session)` - Extract proof, splice into file, advance
+- `hol_cursor_complete(session)` - Extract proof (agent splices into file)
 - `hol_cursor_status(session)` - Show progress
-- `hol_cursor_reenter(session)` - Re-enter goaltree after drop()
+- `hol_cursor_reenter(session)` - Set up goaltree for current theorem
 
 ## Interactive Usage (Claude Code)
 

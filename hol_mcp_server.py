@@ -571,17 +571,19 @@ async def hol_cursor_reenter(session: str) -> str:
 
 @mcp.tool()
 async def hol_cursor_complete(session: str) -> str:
-    """Complete current theorem and start proving next.
+    """Extract completed proof, drop goal, advance to next cheat.
 
-    Call when proof is done (no goals remaining). Do NOT call drop() or
-    edit file manually before this - the tool handles everything:
-    extracts proof from p(), splices into file replacing cheat,
-    advances to next theorem with cheat, and enters goaltree for it.
+    Call when proof is done (no goals remaining). Returns the proof script
+    for you to splice into the file yourself.
+
+    Does NOT modify the filesystem - you are responsible for editing the file
+    to replace the cheat() with the returned proof.
 
     Args:
         session: Session name
 
-    Returns: Confirmation, next theorem info, and current goals (if any remain)
+    Returns: The proof script, theorem name, and next cheat info.
+             After splicing the proof, use hol_cursor_reenter to set up the next theorem.
     """
     cursor = _get_cursor(session)
     if not cursor:
@@ -593,19 +595,25 @@ async def hol_cursor_complete(session: str) -> str:
 
     result = await cursor.complete_and_advance()
 
-    # Get status after advancement
-    status = cursor.status
-    lines = [result, ""]
+    # Handle error case
+    if "error" in result:
+        return f"ERROR: {result['error']}"
 
-    if status['cheats']:
-        # Enter goaltree for next theorem
-        start_result = await cursor.start_current()
-        goals = await s.send("top_goals();", timeout=10)
-        lines.append(f"=== Proving {status['current']} ===")
-        lines.append(start_result)
-        lines.append("")
-        lines.append("=== Current goals ===")
-        lines.append(goals)
+    # Format successful result
+    lines = [
+        f"Completed: {result['theorem']}",
+        "",
+        "=== Proof script (splice this into file) ===",
+        result['proof'],
+        "",
+    ]
+
+    if result['next_cheat']:
+        name = result['next_cheat']['name']
+        line = result['next_cheat']['line']
+        lines.append(f"Next: {name} (line {line}). After splicing, call hol_cursor_reenter to begin proving it.")
+    else:
+        lines.append("All cheats complete!")
 
     return "\n".join(lines)
 

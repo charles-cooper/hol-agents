@@ -69,11 +69,11 @@ Restart session (stop + start, preserves workdir). Use when HOL state is corrupt
 ### Cursor Tools (RECOMMENDED entry point)
 - `{mcp}hol_cursor_init(file, session="default", workdir=None, start_at=None)` - Auto-start session, parse file, enter goaltree. `start_at`: jump to specific theorem
 - `{mcp}hol_cursor_goto(session, theorem_name)` - Jump to specific theorem and enter goaltree (drops current proof)
-- `{mcp}hol_cursor_complete(session)` - **Call when proof done (no goals left).** Internally calls p(), edits file, advances to next theorem. **Do NOT drop() or edit file manually before calling.**
+- `{mcp}hol_cursor_complete(session)` - **Call when proof done (no goals left).** Extracts proof via p(), returns it. **You must splice the proof into the file yourself**, then call `hol_cursor_reenter` to begin the next theorem.
 - `{mcp}hol_cursor_status(session)` - Show position: "3/7 theorems, current: foo_thm"
-- `{mcp}hol_cursor_reenter(session)` - **Drops ALL goaltrees** (clears any stacked), re-enters to retry from scratch
+- `{mcp}hol_cursor_reenter(session)` - **Drops ALL goaltrees** (clears any stacked), sets up goaltree for current theorem
 
-Cursor workflow: init → (prove until no goals → complete) × N → done
+Cursor workflow: init → (prove until no goals → complete → splice proof → reenter) × N → done
 
 ## Goaltree Mode (Interactive Proving)
 
@@ -108,7 +108,9 @@ DB.find "name" | DB.match [] ``pat`` | DB.theorems "thy"
 2. **Start proving** (RECOMMENDED):
    - `{mcp}hol_cursor_init(file="path/to/file.sml")` - auto-starts session, enters goaltree for first cheat
    - Prove interactively with `{mcp}hol_send` (etq, p(), backup)
-   - `{mcp}hol_cursor_complete(session="default")` - saves proof, advances, enters goaltree for next
+   - `{mcp}hol_cursor_complete(session="default")` - get proof script
+   - Edit file to replace cheat() with the returned proof
+   - `{mcp}hol_cursor_reenter(session="default")` - set up goaltree for next theorem
    - Repeat until all theorems done
 3. **Manual**: hol_start → hol_send('gt `goal`') → p() → Edit file
 4. **Verify**: `{mcp}holmake(workdir)` again

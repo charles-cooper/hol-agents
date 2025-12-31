@@ -105,9 +105,9 @@ Provides tools for HOL4 interaction via MCP protocol:
 
 **Cursor tools (recommended workflow):**
 - `hol_cursor_init(file, session)` - Parse file, position at first cheat, enter goaltree
-- `hol_cursor_complete(session)` - Extract p(), splice into file, advance to next
+- `hol_cursor_complete(session)` - Extract proof (agent splices into file, then calls reenter)
 - `hol_cursor_status(session)` - Show progress
-- `hol_cursor_reenter(session)` - Re-enter goaltree after drop()
+- `hol_cursor_reenter(session)` - Set up goaltree for current theorem
 
 **Build:**
 - `holmake(workdir, target, timeout)` - Run Holmake, return output

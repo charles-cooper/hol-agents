@@ -3,11 +3,10 @@
 import pytest
 import shutil
 import tempfile
-import time
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
-from hol_cursor import ProofCursor, atomic_write, get_executable_content, get_script_dependencies
+from hol_cursor import ProofCursor, get_executable_content, get_script_dependencies
 from hol_file_parser import TheoremInfo
 from hol_session import HOLSession
 
@@ -96,13 +95,6 @@ def test_proof_cursor_status_cheats(mock_theorems):
         {"name": "b", "line": 10},
         {"name": "d", "line": 30},
     ]  # c excluded (completed), a excluded (no cheat)
-
-
-def test_atomic_write():
-    with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / "test.txt"
-        atomic_write(p, "hello")
-        assert p.read_text() == "hello"
 
 
 def test_get_executable_content_raw_sml():
@@ -228,72 +220,9 @@ async def test_proof_cursor_start_current():
             assert "goal" in state.lower() or "+" in state  # Goals present
 
 
-def test_check_stale_detects_modification():
-    """Test _check_stale detects external file modifications."""
-    with tempfile.TemporaryDirectory() as d:
-        test_file = Path(d) / "test.sml"
-        test_file.write_text("original content")
-
-        session = Mock()
-        cursor = ProofCursor(test_file, session)
-        cursor._file_mtime = test_file.stat().st_mtime
-
-        # Not stale initially
-        assert not cursor._check_stale()
-
-        # Modify file
-        time.sleep(0.01)  # Ensure mtime changes
-        test_file.write_text("modified content")
-
-        # Now stale
-        assert cursor._check_stale()
-
-
-def test_check_stale_missing_file():
-    """Test _check_stale returns True for missing file."""
-    session = Mock()
-    cursor = ProofCursor(Path("/nonexistent/file.sml"), session)
-    cursor._file_mtime = 12345.0
-    assert cursor._check_stale()
-
-
-@pytest.mark.asyncio
-async def test_complete_and_advance_fails_when_stale():
-    """Test complete_and_advance refuses to splice if file was modified."""
-    with tempfile.TemporaryDirectory() as d:
-        test_file = Path(d) / "test.sml"
-        test_file.write_text("""
-Theorem foo:
-  T
-Proof
-  cheat
-QED
-""")
-        # Mock session that returns a valid proof
-        session = Mock()
-        session.send = AsyncMock(return_value="strip_tac\nval it = () : unit")
-
-        cursor = ProofCursor(test_file, session)
-        cursor._file_mtime = test_file.stat().st_mtime
-        cursor.theorems = [
-            TheoremInfo("foo", "Theorem", "T", 2, 4, 6, True),
-        ]
-        cursor.position = 0
-
-        # Modify file externally
-        time.sleep(0.01)
-        test_file.write_text("modified content")
-
-        # complete_and_advance should fail
-        result = await cursor.complete_and_advance()
-        assert "ERROR" in result
-        assert "modified" in result.lower()
-        assert "foo" in result  # mentions the theorem
-
-
 @pytest.mark.asyncio
 async def test_complete_and_advance_rejects_error_output():
-    """Test complete_and_advance doesn't splice p() error output into file."""
+    """Test complete_and_advance returns error when p() fails."""
     with tempfile.TemporaryDirectory() as d:
         test_file = Path(d) / "testScript.sml"
         original = """open HolKernel boolLib;
@@ -317,12 +246,9 @@ QED
             # Now complete_and_advance calls p() which errors
             result = await cursor.complete_and_advance()
 
-            # Should return error, not splice
-            assert "ERROR" in result
-            assert "No proof found" in result
-
-            # File should be unchanged
-            assert test_file.read_text() == original
+            # Should return error dict
+            assert "error" in result
+            assert "No proof found" in result["error"]
 
 
 @pytest.mark.asyncio
@@ -348,13 +274,13 @@ QED
 
             result = await cursor.complete_and_advance()
 
-            assert "ERROR" in result
-            assert "anonymous" in result.lower()
+            assert "error" in result
+            assert "anonymous" in result["error"].lower()
 
 
 @pytest.mark.asyncio
-async def test_complete_and_advance_validates_with_tacticparse():
-    """Test complete_and_advance validates tactic syntax via TacticParse."""
+async def test_complete_and_advance_returns_proof():
+    """Test complete_and_advance returns proof dict on success."""
     with tempfile.TemporaryDirectory() as d:
         test_file = Path(d) / "testScript.sml"
         test_file.write_text("""open HolKernel boolLib;
@@ -375,8 +301,11 @@ QED
 
             result = await cursor.complete_and_advance()
 
-            # Should succeed - valid tactic syntax
-            assert "Completed" in result or "All cheats filled" in result
+            # Should return proof dict
+            assert "error" not in result
+            assert result["theorem"] == "foo"
+            assert "proof" in result
+            assert result["next_cheat"] is None  # only one theorem
 
 
 @pytest.mark.asyncio
@@ -636,15 +565,15 @@ QED
             await session.send('etq "simp[]";')
             result = await cursor.complete_and_advance()
 
-            # Should find "first" as remaining (even though it's earlier in file)
-            assert "Completed second" in result
-            assert "Remaining cheats:" in result
-            assert "first" in result
+            # Should find "first" as next_cheat (even though it's earlier in file)
+            assert "error" not in result
+            assert result["theorem"] == "second"
+            assert result["next_cheat"]["name"] == "first"
 
 
 @pytest.mark.asyncio
-async def test_complete_and_advance_message_format():
-    """Test complete_and_advance returns correct message format with remaining cheats."""
+async def test_complete_and_advance_with_next_cheat():
+    """Test complete_and_advance returns next_cheat when more cheats remain."""
     with tempfile.TemporaryDirectory() as d:
         test_file = Path(d) / "testScript.sml"
         # Two theorems with cheats
@@ -671,7 +600,8 @@ QED
             await session.send('etq "simp[]";')
             result = await cursor.complete_and_advance()
 
-            # Should mention completion and remaining cheats
-            assert "Completed first" in result
-            assert "Remaining cheats:" in result
-            assert "second" in result
+            # Should return dict with theorem and next_cheat
+            assert "error" not in result
+            assert result["theorem"] == "first"
+            assert result["next_cheat"]["name"] == "second"
+            assert "proof" in result

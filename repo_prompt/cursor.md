@@ -84,25 +84,24 @@ class ProofCursor:
         4. Return status
         """
 
-    def complete_and_advance(self, session: HOLSession) -> str:
-        """Finish current, move to next.
+    def complete_and_advance(self, session: HOLSession) -> dict:
+        """Extract proof, drop goal, advance to next cheat.
 
-        Call when proof is done (no goals left). Do NOT drop() or edit
-        file manually before calling - this handles everything:
-        1. Call p() to extract proof
-        2. Parse p() output to get tactics
-        3. Splice into file (replace cheat)
-        4. Mark as completed
-        5. Advance to next cheat
-        6. Enter goaltree for next
-        7. Return new top_goals()
+        Call when proof is done (no goals left). Returns dict with:
+        - proof: tactic script from p()
+        - theorem: name of completed theorem
+        - next_cheat: {name, line} or None
+
+        Agent must splice proof into file, then call reenter() to
+        set up goaltree for the next theorem.
         """
 
     def reenter(self, session: HOLSession) -> str:
-        """Re-enter goaltree for current theorem.
+        """Set up goaltree for current theorem.
 
-        Drops ALL goaltrees (clears any stacked from manual gt calls),
-        then re-enters goaltree to retry from scratch.
+        Drops ALL goaltrees (clears any stacked), enters goaltree.
+        Use after complete_and_advance to start next theorem, or to
+        retry a proof from scratch.
         """
 
     @property

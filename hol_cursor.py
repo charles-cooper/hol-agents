@@ -1,11 +1,9 @@
 """Proof cursor for navigating through theorems without reloading."""
 
 import asyncio
-import os
-import tempfile
 from pathlib import Path
 
-from hol_file_parser import TheoremInfo, parse_file, splice_into_theorem, parse_p_output
+from hol_file_parser import TheoremInfo, parse_file, parse_p_output
 from hol_session import HOLSession, HOLDIR, escape_sml_string
 
 
@@ -91,18 +89,6 @@ def get_executable_content(content: str, up_to_line: int) -> str:
     return '\n'.join(prefix_lines)
 
 
-def atomic_write(path: Path, content: str) -> None:
-    """Write content to file atomically via temp file + rename."""
-    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=path.name)
-    try:
-        os.write(fd, content.encode())
-        os.close(fd)
-        Path(tmp_path).replace(path)
-    except Exception:
-        os.close(fd)
-        Path(tmp_path).unlink(missing_ok=True)
-        raise
-
 class ProofCursor:
     """Track position in file, advance through theorems without reloading."""
 
@@ -113,14 +99,6 @@ class ProofCursor:
         self.position: int = 0
         self.completed: set[str] = set()
         self._loaded_to_line: int = 0  # Track how much content is loaded
-        self._file_mtime: float = 0.0  # mtime when file was parsed
-
-    def _check_stale(self) -> bool:
-        """Return True if file has been modified since last parse."""
-        try:
-            return self.file.stat().st_mtime != self._file_mtime
-        except OSError:
-            return True  # File gone = stale
 
     def current(self) -> TheoremInfo | None:
         """Get current theorem."""
@@ -153,7 +131,6 @@ class ProofCursor:
 
     async def initialize(self) -> str:
         """Parse file, load HOL to first cheat, position cursor."""
-        self._file_mtime = self.file.stat().st_mtime
         self.theorems = parse_file(self.file)
 
         if not self.theorems:
@@ -238,62 +215,51 @@ class ProofCursor:
 
         return f"Ready: {thm.name}"
 
-    async def complete_and_advance(self) -> str:
-        """Splice completed proof into file, advance to next cheat."""
+    async def complete_and_advance(self) -> dict:
+        """Extract proof, drop goal, reparse file, advance to next cheat.
+
+        Does NOT modify the filesystem - agent is responsible for splicing.
+
+        Returns dict with:
+          - proof: the tactic script from p()
+          - theorem: name of completed theorem
+          - next_cheat: {name, line} of next cheat, or None if all done
+          - error: error message if failed (other fields absent)
+        """
         thm = self.current()
         if not thm:
-            return "ERROR: No current theorem"
+            return {"error": "No current theorem"}
 
         # Get proof from p()
         p_output = await self.session.send("p();", timeout=30)
         tactic_script = parse_p_output(p_output)
 
         if not tactic_script:
-            return f"ERROR: No proof found. Output:\n{p_output}"
+            return {"error": f"No proof found. Output:\n{p_output}"}
 
         # Reject proofs with <anonymous> tactics (agent used e() instead of etq)
         if "<anonymous>" in tactic_script:
-            return (
-                "ERROR: Proof contains <anonymous> tactics. "
+            return {
+                "error": "Proof contains <anonymous> tactics. "
                 "Use etq instead of e() to record tactic names."
-            )
+            }
 
-        # Check for external modifications before validation (more important error)
-        if self._check_stale():
-            return (
-                f"ERROR: File modified since cursor initialized. "
-                f"Proof for {thm.name} NOT saved. Reinitialize cursor to continue."
-            )
-
-        # Validate tactic syntax via TacticParse before splicing
-        escaped = escape_sml_string(tactic_script)
-        validate_result = await self.session.send(
-            f'(TacticParse.parseTacticBlock "{escaped}"; "OK") handle _ => "PARSE_ERROR";',
-            timeout=10
-        )
-        if "PARSE_ERROR" in validate_result or _is_hol_error(validate_result):
-            return f"ERROR: Invalid tactic syntax, cannot splice:\n{tactic_script[:500]}"
-
-        # Splice into file
-        content = self.file.read_text()
-        try:
-            new_content = splice_into_theorem(content, thm.name, tactic_script)
-        except ValueError:
-            return f"ERROR: Failed to splice into {thm.name} (theorem not found)"
-        atomic_write(self.file, new_content)
-        self._file_mtime = self.file.stat().st_mtime  # Update after our write
+        # Drop goal and mark complete
+        await self.session.send("drop();", timeout=5)
         self.completed.add(thm.name)
 
-        # Re-parse file (structure may have changed)
+        # Reparse file (in case agent edited before calling complete)
         self.theorems = parse_file(self.file)
 
-        # Find and move to next cheat
+        # Advance to next cheat
         next_thm = self.next_cheat()
 
-        if next_thm:
-            return f"Completed {thm.name}. Remaining cheats: {next_thm.name} (line {next_thm.start_line})"
-        else:
-            return f"Completed {thm.name}. All cheats filled!"
+        result = {
+            "proof": tactic_script,
+            "theorem": thm.name,
+            "next_cheat": {"name": next_thm.name, "line": next_thm.start_line} if next_thm else None,
+        }
+        return result
 
     @property
     def status(self) -> dict:
