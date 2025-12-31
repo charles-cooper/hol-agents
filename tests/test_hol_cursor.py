@@ -605,3 +605,51 @@ QED
             assert result["theorem"] == "first"
             assert result["next_cheat"]["name"] == "second"
             assert "proof" in result
+
+
+@pytest.mark.asyncio
+async def test_start_current_loads_intermediate_context():
+    """Test start_current loads definitions between theorems."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        # First theorem, then a definition, then second theorem that uses it
+        test_file.write_text("""open HolKernel boolLib bossLib;
+
+Theorem first:
+  T
+Proof
+  cheat
+QED
+
+Definition my_val_def:
+  my_val = (5:num)
+End
+
+Theorem uses_def:
+  my_val = 5
+Proof
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+            await cursor.start_current()
+
+            # Complete first theorem
+            await session.send('etq "simp[]";')
+            result = await cursor.complete_and_advance()
+            assert result["next_cheat"]["name"] == "uses_def"
+
+            # Now start_current for uses_def - should load my_val_def
+            start_result = await cursor.start_current()
+            assert "ERROR" not in start_result
+
+            # Prove using the definition - this would fail if def wasn't loaded
+            tac_result = await session.send('etq "simp[my_val_def]";')
+            assert "Exception" not in tac_result
+            assert "error" not in tac_result.lower()
+
+            # Verify proof completed (empty goal list)
+            goals = await session.send("top_goals();")
+            assert "[]" in goals  # empty goal list

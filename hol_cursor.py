@@ -189,6 +189,10 @@ class ProofCursor:
         if not thm:
             return "ERROR: No current theorem"
 
+        # Load any context between previous position and this theorem
+        # (e.g., definitions between theorem A and B)
+        await self.load_context_to(thm.start_line)
+
         # Clear all proof state unconditionally
         await self.session.send('drop_all();', timeout=5)
 
@@ -247,6 +251,10 @@ class ProofCursor:
         # Drop goal and mark complete
         await self.session.send("drop();", timeout=5)
         self.completed.add(thm.name)
+
+        # Skip past this theorem's proof body for future context loading
+        # (the proof was done interactively, not by loading the file content)
+        self._loaded_to_line = max(self._loaded_to_line, thm.proof_end_line)
 
         # Reparse file (in case agent edited before calling complete)
         self.theorems = parse_file(self.file)

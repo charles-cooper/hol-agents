@@ -12,8 +12,8 @@ class TheoremInfo:
     kind: str  # "Theorem" or "Triviality"
     goal: str  # The statement to prove
     start_line: int  # Line of "Theorem name:"
-    proof_start_line: int  # Line of "Proof"
-    proof_end_line: int  # Line of "QED"
+    proof_start_line: int  # Line after "Proof" (first line of proof body)
+    proof_end_line: int  # Line after "QED" (first line after theorem)
     has_cheat: bool
     proof_body: str = ""  # Content between Proof and QED
     attributes: list[str] = field(default_factory=list)
