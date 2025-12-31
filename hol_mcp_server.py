@@ -545,8 +545,8 @@ async def hol_cursor_goto(session: str, theorem_name: str) -> str:
 async def hol_cursor_reenter(session: str) -> str:
     """Re-enter goaltree for current theorem.
 
-    Drops ALL goaltrees (clears any stacked from manual gt calls), then
-    re-enters goaltree. Use to retry a proof from scratch.
+    Clears all proof state (via drop_all) and re-enters goaltree.
+    Use to retry a proof from scratch after exploring dead-end tactics.
 
     Args:
         session: Session name

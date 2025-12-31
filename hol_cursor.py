@@ -213,9 +213,8 @@ class ProofCursor:
         if not thm:
             return "ERROR: No current theorem"
 
-        # Clear all goaltrees (agent may have stacked multiple via manual gt calls)
-        # drop() raises when no proof, so ignore errors; try enough times to clear any stack
-        await self.session.send('List.app (fn _ => drop() handle _ => ()) [1,2,3,4,5];', timeout=5)
+        # Clear all proof state unconditionally
+        await self.session.send('drop_all();', timeout=5)
 
         # Set up goal
         goal = thm.goal.replace('\n', ' ').strip()

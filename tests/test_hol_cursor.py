@@ -492,3 +492,86 @@ QED
             # Verify the pre-cheat tactic was replayed
             p_output = await session.send("p();")
             assert "simp" in p_output
+
+
+@pytest.mark.asyncio
+async def test_drop_all_clears_stacked_goaltrees():
+    """Test drop_all() clears all stacked goaltrees."""
+    with tempfile.TemporaryDirectory() as d:
+        async with HOLSession(d) as session:
+            # Stack multiple goaltrees
+            await session.send('gt `A ==> A`;')
+            await session.send('gt `B ==> B`;')
+            await session.send('gt `C ==> C`;')
+
+            # Verify 3 proofs on stack
+            status = await session.send('status();')
+            assert "3 proofs" in status
+
+            # drop_all should clear everything
+            result = await session.send('drop_all();')
+            assert "no proofs" in result.lower()
+
+            # Verify empty
+            status = await session.send('status();')
+            assert "no proofs" in status.lower()
+
+            # Can start fresh
+            await session.send('gt `X ==> X`;')
+            status = await session.send('status();')
+            assert "1 proof" in status
+
+
+@pytest.mark.asyncio
+async def test_drop_all_idempotent():
+    """Test drop_all() is safe to call on empty state."""
+    with tempfile.TemporaryDirectory() as d:
+        async with HOLSession(d) as session:
+            # Call drop_all on empty state - should not error
+            result = await session.send('drop_all();')
+            assert "no proofs" in result.lower()
+
+            # Call again - still safe
+            result = await session.send('drop_all();')
+            assert "no proofs" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_start_current_clears_stacked_proofs():
+    """Test start_current() uses drop_all() to clear stacked proofs."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        test_file.write_text("""open HolKernel boolLib;
+
+Theorem foo:
+  T
+Proof
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+
+            # Enter goaltree for foo (like MCP tool does)
+            await cursor.start_current()
+
+            # Stack extra goaltrees (simulating agent doing manual gt calls)
+            await session.send('gt `A ==> A`;')
+            await session.send('gt `B ==> B`;')
+
+            # Verify we have multiple proofs now
+            status = await session.send('status();')
+            assert "3 proof" in status  # original + 2 extra
+
+            # start_current should clear all and start fresh
+            result = await cursor.start_current()
+            assert "ERROR" not in result
+
+            # Should have exactly 1 proof now (foo)
+            status = await session.send('status();')
+            assert "1 proof" in status
+
+            # And it should be the right goal
+            goals = await session.send('top_goals();')
+            assert "T" in goals

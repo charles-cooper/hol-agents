@@ -135,7 +135,10 @@ def hol_cursor_status(session: str) -> str:
 
 @mcp.tool()
 def hol_cursor_reenter(session: str) -> str:
-    """Drops ALL goaltrees (clears any stacked), re-enters to retry from scratch."""
+    """Clears all proof state (via drop_all) and re-enters goaltree.
+
+    Use to retry a proof from scratch after exploring dead-end tactics.
+    """
 ```
 
 ## Key Behaviors
