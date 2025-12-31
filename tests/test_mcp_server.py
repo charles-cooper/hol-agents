@@ -77,6 +77,48 @@ async def test_goaltree_mode(workdir):
         await hol_stop(session="gt_test")
 
 
+async def test_p_output_multiline_integration(workdir):
+    """Integration test: parse_p_output handles multi-line val it format from real HOL."""
+    from hol_file_parser import parse_p_output
+
+    await hol_stop(session="p_multi_test")
+    await hol_start(workdir=workdir, name="p_multi_test")
+
+    try:
+        # Create a proof with multiple tactics to produce multi-line p() output
+        await hol_send(session="p_multi_test", command="gt `A /\\ B ==> B /\\ A`;")
+        await hol_send(session="p_multi_test", command='etq "strip_tac";')
+        await hol_send(session="p_multi_test", command='etq "conj_tac";')
+        await hol_send(session="p_multi_test", command='etq "first_assum ACCEPT_TAC";')
+        await hol_send(session="p_multi_test", command='etq "first_assum ACCEPT_TAC";')
+
+        # p() on complete proof can produce multi-line "val it = ..." format
+        result = await hol_send(session="p_multi_test", command="p();")
+
+        # Verify we got multi-line format with ": proof" type annotation
+        assert "\n" in result.strip(), f"Expected multi-line output, got: {result!r}"
+        assert ": proof" in result, f"Expected complete proof format, got: {result!r}"
+
+        # Check for multi-line val it format: "val it =" on its own line or
+        # single-line format with content after "val it = "
+        has_multiline_val_it = "val it =\n" in result or "val it = \n" in result
+        has_singleline_val_it = "val it = " in result and ": proof" in result
+
+        # Either format is valid - the key is parse_p_output handles it
+        assert has_multiline_val_it or has_singleline_val_it, (
+            f"Expected val it format, got: {result!r}"
+        )
+
+        # Verify parse_p_output handles whatever format HOL produced
+        parsed = parse_p_output(result)
+        assert parsed is not None, f"parse_p_output failed on: {result!r}"
+        assert "strip_tac" in parsed
+        assert "conj_tac" in parsed
+        assert ": proof" not in parsed  # Type annotation stripped
+    finally:
+        await hol_stop(session="p_multi_test")
+
+
 async def test_db_search(workdir):
     """Test theorem database search."""
     await hol_stop(session="db_test")

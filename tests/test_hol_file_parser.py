@@ -136,3 +136,33 @@ def test_parse_p_output_error_prefix():
     """ERROR: sentinel outputs should return None."""
     assert parse_p_output("ERROR: HOL not running") is None
     assert parse_p_output("Error: HOL not running") is None
+
+
+def test_parse_p_output_multiline_val_it():
+    """Regression: multi-line 'val it =' format was returning None."""
+    # Format 3: val it = on its own line, tactic on subsequent lines
+    output = '''\
+val it =
+   completeInduct_on `LENGTH xs` \\
+    rw[LET_THM] \\
+     Cases_on `n >= LENGTH xs`
+      >- (simp[])
+      >- (gvs[])
+: proof'''
+    result = parse_p_output(output)
+    assert result is not None, "Should parse multi-line val it format"
+    assert 'completeInduct_on' in result
+    assert ': proof' not in result  # Type annotation stripped
+    assert 'val it' not in result   # val binding stripped
+
+
+def test_parse_p_output_multiline_val_it_inline_proof():
+    """Multi-line val it with : proof on last content line."""
+    output = '''\
+val it =
+   simp[] \\
+    gvs[]: proof'''
+    result = parse_p_output(output)
+    assert result is not None
+    assert result.strip().endswith('gvs[]')
+    assert ': proof' not in result

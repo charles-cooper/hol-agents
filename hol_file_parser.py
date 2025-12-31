@@ -159,8 +159,17 @@ def parse_p_output(output: str) -> str | None:
             if tactic:
                 return tactic
             continue
+        # Handle multi-line "val it =" format (completed proof spanning lines)
+        if stripped == 'val it =':
+            continue
         # Stop at other val bindings
         if stripped.startswith('val '):
+            break
+        # Handle ": proof" terminator for multi-line val it format
+        if stripped == ': proof':
+            break
+        if stripped.endswith(': proof'):
+            tactic_lines.append(stripped.rsplit(': proof', 1)[0].rstrip())
             break
         # Skip "OK" markers from goaltree
         if stripped == 'OK':
