@@ -175,8 +175,9 @@ class ProofCursor:
         lines = content.split('\n')
 
         # Get content between loaded position and target
-        # _loaded_to_line is 1-indexed, we want lines from _loaded_to_line to target_line-1
-        additional = '\n'.join(lines[self._loaded_to_line:target_line - 1])
+        # _loaded_to_line is 1-indexed line number of first unloaded line
+        # Convert to 0-indexed: line N is at index N-1
+        additional = '\n'.join(lines[self._loaded_to_line - 1:target_line - 1])
 
         if additional.strip():
             await self.session.send(additional, timeout=300)

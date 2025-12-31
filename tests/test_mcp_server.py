@@ -304,3 +304,37 @@ async def test_cursor_goto_loads_context(tmp_path):
         assert "error" not in result.lower()
     finally:
         await hol_stop(session="ctx_test")
+
+
+async def test_cursor_goto_loads_intermediate_theorems(tmp_path):
+    """Test that goto loads intermediate theorems via load_context_to.
+
+    Regression test for off-by-one bug in load_context_to where
+    lines[_loaded_to_line:...] was used instead of lines[_loaded_to_line - 1:...],
+    causing the first line of intermediate content to be skipped.
+    """
+    test_file = tmp_path / "testScript.sml"
+    shutil.copy(FIXTURES_DIR / "testScript.sml", test_file)
+
+    try:
+        # Init at first cheat (needs_proof at line 18)
+        # This loads lines 1-17 (including add_zero at lines 11-15)
+        await hol_cursor_init(file=str(test_file), session="intermediate_test")
+
+        # Jump to partial_proof (line 25)
+        # This should load lines 18-24 via load_context_to
+        # Line 18 is "Theorem needs_proof:" - must not be skipped!
+        await hol_cursor_goto(session="intermediate_test", theorem_name="partial_proof")
+
+        # Verify needs_proof (line 18) was loaded - this is the regression test
+        # DB.find returns [] if not found
+        result = await hol_send(
+            session="intermediate_test",
+            command='DB.find "needs_proof";',
+            timeout=10,
+        )
+        assert "needs_proof" in result, f"needs_proof should be in DB, got: {result}"
+        assert "[]" not in result, f"needs_proof should not return empty list: {result}"
+
+    finally:
+        await hol_stop(session="intermediate_test")
