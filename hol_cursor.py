@@ -136,11 +136,10 @@ class ProofCursor:
         return None
 
     def next_cheat(self) -> TheoremInfo | None:
-        """Advance to next theorem with cheat."""
-        while self.position < len(self.theorems) - 1:
-            self.position += 1
-            thm = self.current()
-            if thm and thm.has_cheat and thm.name not in self.completed:
+        """Find any remaining theorem with cheat."""
+        for i, thm in enumerate(self.theorems):
+            if thm.has_cheat and thm.name not in self.completed:
+                self.position = i
                 return thm
         return None
 
@@ -292,9 +291,9 @@ class ProofCursor:
         next_thm = self.next_cheat()
 
         if next_thm:
-            return f"Completed {thm.name}, next: {next_thm.name} (line {next_thm.start_line})"
+            return f"Completed {thm.name}. Remaining cheats: {next_thm.name} (line {next_thm.start_line})"
         else:
-            return f"Completed {thm.name} - no more cheats!"
+            return f"Completed {thm.name}. All cheats filled!"
 
     @property
     def status(self) -> dict:

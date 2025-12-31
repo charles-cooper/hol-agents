@@ -33,6 +33,33 @@ def test_proof_cursor_next_cheat(mock_theorems):
     assert cursor.next_cheat().name == "c"
 
 
+def test_next_cheat_finds_earlier_theorem(mock_theorems):
+    """Test next_cheat finds cheats earlier in file, not just forward."""
+    session = Mock()
+    cursor = ProofCursor(Path("/tmp/test.sml"), session)
+    cursor.theorems = mock_theorems
+    # Position at end of file, but first cheat (b) is earlier
+    cursor.position = 2
+    cursor.completed = {"c"}  # Last theorem completed
+
+    # Should find b even though it's before current position
+    thm = cursor.next_cheat()
+    assert thm is not None
+    assert thm.name == "b"
+    assert cursor.position == 1
+
+
+def test_next_cheat_returns_none_when_all_done(mock_theorems):
+    """Test next_cheat returns None when all cheats are completed."""
+    session = Mock()
+    cursor = ProofCursor(Path("/tmp/test.sml"), session)
+    cursor.theorems = mock_theorems
+    cursor.position = 2
+    cursor.completed = {"b", "c"}  # All cheats done
+
+    assert cursor.next_cheat() is None
+
+
 def test_proof_cursor_goto(mock_theorems):
     """Test ProofCursor.goto jumps to theorem by name."""
     session = Mock()
@@ -349,7 +376,7 @@ QED
             result = await cursor.complete_and_advance()
 
             # Should succeed - valid tactic syntax
-            assert "Completed" in result or "no more cheats" in result
+            assert "Completed" in result or "All cheats filled" in result
 
 
 @pytest.mark.asyncio
@@ -575,3 +602,76 @@ QED
             # And it should be the right goal
             goals = await session.send('top_goals();')
             assert "T" in goals
+
+
+@pytest.mark.asyncio
+async def test_complete_and_advance_finds_earlier_cheat():
+    """Test complete_and_advance finds cheats earlier in file after completing later one."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        # Two theorems with cheats
+        test_file.write_text("""open HolKernel boolLib;
+
+Theorem first:
+  T
+Proof
+  cheat
+QED
+
+Theorem second:
+  T
+Proof
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+
+            # Jump to second theorem (skipping first)
+            cursor.goto("second")
+            await cursor.start_current()
+
+            # Complete second theorem
+            await session.send('etq "simp[]";')
+            result = await cursor.complete_and_advance()
+
+            # Should find "first" as remaining (even though it's earlier in file)
+            assert "Completed second" in result
+            assert "Remaining cheats:" in result
+            assert "first" in result
+
+
+@pytest.mark.asyncio
+async def test_complete_and_advance_message_format():
+    """Test complete_and_advance returns correct message format with remaining cheats."""
+    with tempfile.TemporaryDirectory() as d:
+        test_file = Path(d) / "testScript.sml"
+        # Two theorems with cheats
+        test_file.write_text("""open HolKernel boolLib;
+
+Theorem first:
+  T
+Proof
+  cheat
+QED
+
+Theorem second:
+  T
+Proof
+  cheat
+QED
+""")
+        async with HOLSession(d) as session:
+            cursor = ProofCursor(test_file, session)
+            await cursor.initialize()
+            await cursor.start_current()
+
+            # Complete the proof
+            await session.send('etq "simp[]";')
+            result = await cursor.complete_and_advance()
+
+            # Should mention completion and remaining cheats
+            assert "Completed first" in result
+            assert "Remaining cheats:" in result
+            assert "second" in result

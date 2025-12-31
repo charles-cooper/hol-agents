@@ -595,25 +595,17 @@ async def hol_cursor_complete(session: str) -> str:
 
     # Get status after advancement
     status = cursor.status
-    lines = [
-        result,
-        "",
-        f"Remaining cheats: {len(status['cheats'])}",
-    ]
+    lines = [result, ""]
 
-    if status['current']:
+    if status['cheats']:
         # Enter goaltree for next theorem
         start_result = await cursor.start_current()
         goals = await s.send("top_goals();", timeout=10)
-        lines.append(f"Next: {status['current']} (line {status['current_line']})")
-        lines.append("")
         lines.append(f"=== Proving {status['current']} ===")
         lines.append(start_result)
         lines.append("")
         lines.append("=== Current goals ===")
         lines.append(goals)
-    else:
-        lines.append("No more theorems with cheats!")
 
     return "\n".join(lines)
 
