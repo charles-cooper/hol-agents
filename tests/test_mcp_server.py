@@ -338,3 +338,100 @@ async def test_cursor_goto_loads_intermediate_theorems(tmp_path):
 
     finally:
         await hol_stop(session="intermediate_test")
+
+
+# =============================================================================
+# Pipe communication bug reproduction tests (MCP layer)
+# =============================================================================
+
+
+async def test_mcp_open_shows_bindings(workdir):
+    """Test that open via MCP shows bindings (file-based execution)."""
+    await hol_stop(session="mcp_open_test")
+    await hol_start(workdir=workdir, name="mcp_open_test")
+
+    try:
+        result = await hol_send(session="mcp_open_test", command="open boolTheory;", timeout=10)
+        assert "thm" in result, f"MCP: open should show bindings, got: {repr(result)[:100]}"
+    finally:
+        await hol_stop(session="mcp_open_test")
+
+
+async def test_mcp_load_then_open_sequence(workdir):
+    """Test MCP: load followed by open (both show output with file-based execution)."""
+    await hol_stop(session="mcp_seq_test")
+    await hol_start(workdir=workdir, name="mcp_seq_test")
+
+    try:
+        # load completes without error
+        result1 = await hol_send(session="mcp_seq_test", command='load "bossLib";', timeout=30)
+        assert "error" not in result1.lower(), f"MCP load failed: {repr(result1)[:100]}"
+
+        # open shows bindings with file-based execution
+        result2 = await hol_send(session="mcp_seq_test", command="open boolTheory;", timeout=10)
+        assert "thm" in result2, f"MCP open should show bindings: {repr(result2)[:100]}"
+
+        # verify session still works
+        result3 = await hol_send(session="mcp_seq_test", command="1 + 1;", timeout=10)
+        assert "2" in result3, f"MCP post-open result: {repr(result3)}"
+    finally:
+        await hol_stop(session="mcp_seq_test")
+
+
+async def test_mcp_stress_sequential(workdir):
+    """Stress test: many sequential commands via MCP, verify each response."""
+    await hol_stop(session="mcp_stress_test")
+    await hol_start(workdir=workdir, name="mcp_stress_test")
+
+    try:
+        failures = []
+        for i in range(100):
+            result = await hol_send(session="mcp_stress_test", command=f"{i};", timeout=10)
+            if str(i) not in result:
+                failures.append(f"i={i}: expected {i} in {repr(result)}")
+
+        assert not failures, f"MCP stress test failures:\n" + "\n".join(failures[:10])
+    finally:
+        await hol_stop(session="mcp_stress_test")
+
+
+async def test_mcp_mixed_output_no_output(workdir):
+    """Stress test: alternating commands with/without output via MCP."""
+    await hol_stop(session="mcp_mixed_test")
+    await hol_start(workdir=workdir, name="mcp_mixed_test")
+
+    try:
+        failures = []
+        for i in range(50):
+            # Command with output
+            result = await hol_send(session="mcp_mixed_test", command=f"{i};", timeout=10)
+            if str(i) not in result:
+                failures.append(f"i={i} output: expected {i} in {repr(result)}")
+
+            # Command with no output
+            result = await hol_send(session="mcp_mixed_test", command=f"val _ = {i};", timeout=10)
+            if result != "":
+                failures.append(f"i={i} no-output: expected empty, got {repr(result)}")
+
+        assert not failures, f"MCP mixed test failures:\n" + "\n".join(failures[:10])
+    finally:
+        await hol_stop(session="mcp_mixed_test")
+
+
+async def test_mcp_multiple_opens_sequence(workdir):
+    """Test multiple opens followed by command with output."""
+    await hol_stop(session="mcp_multi_open")
+    await hol_start(workdir=workdir, name="mcp_multi_open")
+
+    try:
+        # Multiple opens (show bindings with file-based execution)
+        theories = ['boolTheory', 'numTheory', 'listTheory', 'pairTheory', 'optionTheory']
+        for theory in theories:
+            result = await hol_send(session="mcp_multi_open", command=f"open {theory};", timeout=10)
+            assert "thm" in result or "val" in result, f"open {theory}: expected bindings, got {repr(result)[:100]}"
+
+        # Now command with output
+        result = await hol_send(session="mcp_multi_open", command="42;", timeout=10)
+        assert "42" in result, f"After opens: expected 42, got {repr(result)}"
+    finally:
+        await hol_stop(session="mcp_multi_open")

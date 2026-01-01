@@ -1,9 +1,12 @@
 """Direct HOL subprocess management with clean interrupt support."""
 
 import asyncio
+import atexit
 import os
 import re
+import shutil
 import signal
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -43,6 +46,21 @@ class HOLSession:
         self.strip_ansi = strip_ansi
         self.process: Optional[asyncio.subprocess.Process] = None
         self._buffer = b""
+        self._temp_dir: Optional[Path] = None
+        self._cmd_counter = 0
+
+    def _ensure_temp_dir(self) -> Path:
+        """Create temp directory for this session if not exists."""
+        if self._temp_dir is None:
+            self._temp_dir = Path(tempfile.mkdtemp(prefix='hol_session_'))
+            atexit.register(self._cleanup_temp_dir)
+        return self._temp_dir
+
+    def _cleanup_temp_dir(self):
+        """Remove temp directory and all contents."""
+        if self._temp_dir and self._temp_dir.exists():
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            self._temp_dir = None
 
     async def start(self) -> str:
         """Start HOL subprocess."""
@@ -102,23 +120,54 @@ class HOLSession:
                 break
 
     async def send(self, sml_code: str, timeout: float = 5) -> str:
-        """Send SML code and wait for response."""
+        """Send SML code via temp file and wait for response.
+
+        Uses file-based execution (QUse.use) to work around HOL4's holrepl.ML
+        bug where static errors in --zero mode corrupt the session. File-based
+        execution converts static errors to runtime exceptions, which the REPL
+        handles correctly.
+        """
         if not self.process or self.process.returncode is not None:
             return "ERROR: HOL not running"
 
-        await self._drain_pipe()
-        await self._write_command(sml_code)
+        # Write to temp file
+        temp_dir = self._ensure_temp_dir()
+        self._cmd_counter += 1
+        tmp_path = temp_dir / f"cmd_{self._cmd_counter}.sml"
+        tmp_path.write_text(sml_code)
 
         try:
-            return await self._read_response(timeout=timeout)
-        except asyncio.TimeoutError:
-            self.interrupt()
+            # Escape path for SML string literal
+            escaped_path = escape_sml_string(str(tmp_path))
+            use_cmd = f'QUse.use "{escaped_path}";'
+
+            await self._drain_pipe()
+            await self._write_command(use_cmd)
+
             try:
-                remaining = await self._read_response(timeout=5)
+                response = await self._read_response(timeout=timeout)
             except asyncio.TimeoutError:
-                remaining = ""
-            msg = f"TIMEOUT after {timeout}s - sent interrupt."
-            return f"{msg}\n{remaining}" if remaining else msg
+                self.interrupt()
+                try:
+                    remaining = await self._read_response(timeout=5)
+                except asyncio.TimeoutError:
+                    remaining = ""
+                msg = f"TIMEOUT after {timeout}s - sent interrupt."
+                response = f"{msg}\n{remaining}" if remaining else msg
+
+            # Clean up temp path references in error messages
+            response = response.replace(str(tmp_path), '<input>')
+
+            # Strip trailing "val it = (): unit" from QUse.use output
+            response = re.sub(r'\n?val it = \(\): unit\s*$', '', response)
+
+            return response
+        finally:
+            # Clean up temp file
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
     async def _read_response(self, timeout: float) -> str:
         """Read until null terminator, return all segments joined."""
@@ -168,6 +217,7 @@ class HOLSession:
                     pass
         self.process = None
         self._buffer = b""
+        self._cleanup_temp_dir()
 
     @property
     def is_running(self) -> bool:
