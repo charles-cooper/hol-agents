@@ -183,3 +183,234 @@ def test_parse_sml_string_with_space():
     assert _parse_sml_string('val it = "hello" : string') == "hello"
     # With escapes
     assert _parse_sml_string('val it = "a\\\\b": string') == "a\\\\b"
+
+
+# =============================================================================
+# Pipe communication bug reproduction tests
+# =============================================================================
+
+
+async def test_open_shows_bindings():
+    """Verify that 'open' statements show theorem bindings (file-based execution).
+
+    With file-based execution (QUse.use), open shows all bindings brought into scope.
+    This is actually more informative for agents.
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        result = await session.send('open boolTheory;', timeout=10)
+        # File-based execution shows bindings from open
+        assert "TRUTH" in result, f"Expected theorem bindings, got: {repr(result)}"
+        assert "thm" in result, f"Expected 'thm' type annotations, got: {repr(result)}"
+
+
+async def test_load_then_open_sequence():
+    """Verify load followed by open both work correctly.
+
+    Tests that file-based execution handles both commands properly:
+    1. load "Theory"; -> completes without error
+    2. open Theory;   -> shows bindings
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Step 1: load produces output (may or may not have "unit" with file-based)
+        result1 = await session.send('load "bossLib";', timeout=30)
+        assert "error" not in result1.lower(), f"load failed: {repr(result1)}"
+
+        # Step 2: open shows bindings with file-based execution
+        result2 = await session.send('open boolTheory;', timeout=10)
+        # Verify we get theorem bindings, not garbage or error
+        assert "thm" in result2, f"open should show bindings, got: {repr(result2)}"
+
+        # Step 3: verify session still works correctly
+        result3 = await session.send('1 + 1;', timeout=10)
+        assert "2" in result3, f"Expected 2, got: {repr(result3)}"
+
+
+async def test_output_then_no_output_rapid():
+    """Test rapid alternation between commands with/without output.
+
+    If there's a race in _drain_pipe(), rapid sequences might expose it.
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        for i in range(20):
+            # Command with output
+            result = await session.send(f'{i};', timeout=10)
+            assert str(i) in result, f"Iteration {i}: expected {i} in result, got: {repr(result)}"
+
+            # Command with no output (val _ = ... produces no output)
+            result = await session.send(f'val _ = {i};', timeout=10)
+            # val _ binding produces no output
+            assert result == "", f"Iteration {i}: val _ should be empty, got: {repr(result)}"
+
+
+async def test_multiple_opens_then_command():
+    """Test multiple opens followed by a computation.
+
+    With file-based execution, opens show bindings. Verify session continues working.
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Multiple opens (show bindings with file-based execution)
+        for theory in ['boolTheory', 'numTheory', 'listTheory']:
+            result = await session.send(f'open {theory};', timeout=10)
+            assert "thm" in result or "val" in result, f"open {theory} should show bindings: {repr(result)[:100]}"
+
+        # Now a command that should return output
+        result = await session.send('1 + 1;', timeout=10)
+        assert "2" in result, f"After opens, expected 2, got: {repr(result)}"
+
+
+async def test_slow_command_then_fast_command():
+    """Test if slow command followed by fast command causes response mixup.
+
+    If _drain_pipe races with late-arriving data, we might get wrong response.
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Slow command (computation)
+        result1 = await session.send('val slow = List.tabulate(10000, fn i => i);', timeout=30)
+        # Should contain something about the list
+        assert "int list" in result1 or "val slow" in result1, f"Slow cmd result: {repr(result1)}"
+
+        # Immediate fast command
+        result2 = await session.send('42;', timeout=10)
+        assert "42" in result2, f"Fast cmd after slow: expected 42, got: {repr(result2)}"
+        # Make sure we didn't get leftover from slow command
+        assert "10000" not in result2, f"Got leftover from slow cmd: {repr(result2)}"
+
+
+# =============================================================================
+# Prolonged use test - single session through many operations
+# =============================================================================
+
+
+async def test_static_error_recovery():
+    """Verify session survives static errors (file-based execution fix).
+
+    Previously (stdin), static errors would corrupt the session. With file-based
+    execution, static errors become runtime exceptions that the REPL handles.
+    """
+    async with HOLSession(str(FIXTURES_DIR)) as session:
+        # Normal command works
+        result = await session.send('1;', timeout=10)
+        assert "1" in result, f"Before error: expected 1, got {repr(result)}"
+
+        # Trigger an error (open non-loaded theory)
+        result = await session.send('open NonExistentFooTheory;', timeout=10)
+        assert "error" in result.lower(), f"Should be error: {repr(result)}"
+
+        # BUG: After error, commands return empty
+        result = await session.send('2;', timeout=10)
+        assert "2" in result, f"After error: expected 2, got {repr(result)}"
+
+        result = await session.send('3;', timeout=10)
+        assert "3" in result, f"Second after error: expected 3, got {repr(result)}"
+
+
+async def test_prolonged_session_use():
+    """Simulate prolonged use: single session through many diverse operations.
+
+    Tests for state corruption that accumulates over time.
+    Includes: basic commands, opens, loads, goaltree, interrupts, stress.
+    """
+    session = HOLSession(str(FIXTURES_DIR))
+    await session.start()
+    failures = []
+
+    try:
+        # Phase 1: Basic commands
+        for i in range(20):
+            result = await session.send(f'{i};', timeout=10)
+            if str(i) not in result:
+                failures.append(f"Phase1 i={i}: expected {i}, got {repr(result)}")
+
+        # Phase 2: Opens (shows bindings with file-based execution)
+        for theory in ['boolTheory', 'numTheory', 'listTheory']:
+            result = await session.send(f'open {theory};', timeout=10)
+            if "thm" not in result and "val" not in result:
+                failures.append(f"Phase2 open {theory}: expected bindings, got {repr(result)[:100]}")
+
+        result = await session.send('100;', timeout=10)
+        if "100" not in result:
+            failures.append(f"Phase2 after opens: expected 100, got {repr(result)}")
+
+        # Phase 3: Load then open (both show output with file-based execution)
+        result = await session.send('load "bossLib";', timeout=30)
+        if "error" in result.lower():
+            failures.append(f"Phase3 load failed: {repr(result)[:100]}")
+
+        result = await session.send('open pairTheory;', timeout=10)
+        if "thm" not in result and "val" not in result:
+            failures.append(f"Phase3 open after load: expected bindings, got {repr(result)[:100]}")
+
+        result = await session.send('200;', timeout=10)
+        if "200" not in result:
+            failures.append(f"Phase3 after load+open: expected 200, got {repr(result)}")
+
+        # Phase 4: Goaltree mode
+        result = await session.send('gt `1 + 1 = 2`;', timeout=10)
+        # Just check it doesn't error
+        result = await session.send('etq "EVAL_TAC";', timeout=10)
+        result = await session.send('drop();', timeout=10)
+
+        result = await session.send('300;', timeout=10)
+        if "300" not in result:
+            failures.append(f"Phase4 after goaltree: expected 300, got {repr(result)}")
+
+        # Phase 5: Trigger interrupt
+        result = await session.send('fun loop () = loop (); loop ();', timeout=1)
+        if "TIMEOUT" not in result and "interrupt" not in result.lower():
+            failures.append(f"Phase5 interrupt: expected timeout, got {repr(result)}")
+
+        result = await session.send('400;', timeout=10)
+        if "400" not in result:
+            failures.append(f"Phase5 after interrupt: expected 400, got {repr(result)}")
+
+        # Phase 6: Stress after interrupt
+        for i in range(50):
+            result = await session.send(f'{500 + i};', timeout=10)
+            if str(500 + i) not in result:
+                failures.append(f"Phase6 i={i}: expected {500+i}, got {repr(result)}")
+
+        # Phase 7: Mixed after stress
+        result = await session.send('open optionTheory;', timeout=10)
+        if "thm" not in result and "val" not in result:
+            failures.append(f"Phase7 late open: expected bindings, got {repr(result)[:100]}")
+
+        result = await session.send('600;', timeout=10)
+        if "600" not in result:
+            failures.append(f"Phase7 after open: expected 600, got {repr(result)}")
+
+        # Use combinTheory which is part of bossLib
+        result = await session.send('open combinTheory;', timeout=10)
+        if "thm" not in result and "val" not in result:
+            failures.append(f"Phase7 late open 2: expected bindings, got {repr(result)[:100]}")
+
+        result = await session.send('700;', timeout=10)
+        if "700" not in result:
+            failures.append(f"Phase7 after open 2: expected 700, got {repr(result)}")
+
+        # Phase 8: Final stress - alternating output/no-output
+        for i in range(100):
+            result = await session.send(f'{800 + i};', timeout=10)
+            if str(800 + i) not in result:
+                failures.append(f"Phase8 i={i} output: expected {800+i}, got {repr(result)}")
+
+            result = await session.send(f'val _ = {i};', timeout=10)
+            if result != "":
+                failures.append(f"Phase8 i={i} no-output: expected empty, got {repr(result)}")
+
+        # Phase 9: Multiple interrupts
+        for j in range(3):
+            result = await session.send('fun loop () = loop (); loop ();', timeout=1)
+            result = await session.send(f'{1000 + j};', timeout=10)
+            if str(1000 + j) not in result:
+                failures.append(f"Phase9 post-interrupt {j}: expected {1000+j}, got {repr(result)}")
+
+        # Phase 10: Final verification
+        for i in range(20):
+            result = await session.send(f'{2000 + i};', timeout=10)
+            if str(2000 + i) not in result:
+                failures.append(f"Phase10 final i={i}: expected {2000+i}, got {repr(result)}")
+
+    finally:
+        await session.stop()
+
+    assert not failures, f"Prolonged session failures ({len(failures)}):\n" + "\n".join(failures[:20])
