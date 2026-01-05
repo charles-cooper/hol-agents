@@ -8,6 +8,10 @@ SKILLS_TARGET=".claude/skills/hol4"
 if [[ -L "$SKILLS_TARGET" ]]; then
     rm "$SKILLS_TARGET"
     echo "Removed skills symlink: $SKILLS_TARGET"
+    # Remove skills directory only if now empty (rmdir fails on non-empty)
+    if rmdir ".claude/skills" 2>/dev/null; then
+        echo "Removed empty .claude/skills directory"
+    fi
 elif [[ -e "$SKILLS_TARGET" ]]; then
     echo "WARNING: $SKILLS_TARGET exists but is not a symlink, skipping"
 else
