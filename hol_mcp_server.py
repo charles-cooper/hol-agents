@@ -230,32 +230,46 @@ async def hol_restart(session: str) -> str:
 
 
 async def _kill_process_group(proc):
-    """Kill process group: SIGTERM, wait, SIGKILL if needed."""
-    if proc is None or proc.returncode is not None:
+    """Kill process group: SIGTERM, wait, SIGKILL if needed.
+
+    Must kill even if parent exited - children (buildheap) may still be alive.
+    """
+    if proc is None:
         return
 
     pgid = proc.pid
 
+    # Send SIGTERM to the whole process group
     try:
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
-        return  # Already dead
+        return  # Process group doesn't exist
 
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=1.0)
-        return  # Died gracefully
-    except (asyncio.TimeoutError, asyncio.CancelledError):
-        pass
+    # Wait for processes to die gracefully (up to 1s)
+    if proc.returncode is None:
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=1.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+    else:
+        # Parent already exited, give children time to die from SIGTERM
+        try:
+            await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass  # Still need to SIGKILL
 
+    # SIGKILL anything remaining in the group
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError:
-        return
+        pass  # Already gone
 
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=0.5)
-    except:
-        pass
+    # Reap parent if needed
+    if proc.returncode is None:
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=0.5)
+        except:
+            pass
 
 
 # Progress reporting interval for long builds (resets MCP client timeout)
