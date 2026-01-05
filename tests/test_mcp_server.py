@@ -1,6 +1,9 @@
 """Test the HOL MCP server tools."""
 
+import asyncio
+import os
 import shutil
+import signal
 
 import pytest
 from pathlib import Path
@@ -17,6 +20,7 @@ from hol_mcp_server import (
     hol_cursor_status as _hol_cursor_status,
     hol_cursor_goto as _hol_cursor_goto,
     set_agent_state,
+    _kill_process_group,
 )
 
 # Unwrap FunctionTool to get actual functions
@@ -338,3 +342,89 @@ async def test_cursor_goto_loads_intermediate_theorems(tmp_path):
 
     finally:
         await hol_stop(session="intermediate_test")
+
+
+# =============================================================================
+# Process Group Tests
+# =============================================================================
+
+
+async def test_kill_process_group_kills_children(tmp_path):
+    """Test that _kill_process_group kills child processes, not just parent.
+
+    This is a regression test for the holmake OOM issue where timeout killed
+    only the parent Holmake process, leaving child buildheap processes as
+    orphans that consumed 10-30GB RAM each.
+    """
+    # Create a script that spawns a child and sleeps
+    script = tmp_path / "spawn_child.sh"
+    script.write_text("""\
+#!/bin/bash
+# Spawn a child that also sleeps
+sleep 300 &
+CHILD_PID=$!
+echo "CHILD_PID=$CHILD_PID"
+# Parent also sleeps
+sleep 300
+""")
+    script.chmod(0o755)
+
+    # Start the process in its own session (like holmake does)
+    proc = await asyncio.create_subprocess_exec(
+        str(script),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    # Wait for child PID to be printed
+    line = await asyncio.wait_for(proc.stdout.readline(), timeout=5.0)
+    child_pid = int(line.decode().strip().split("=")[1])
+    parent_pid = proc.pid
+
+    # Verify both processes are running
+    assert _pid_exists(parent_pid), "Parent should be running"
+    assert _pid_exists(child_pid), "Child should be running"
+
+    # Kill the process group
+    await _kill_process_group(proc)
+
+    # Give OS a moment to clean up
+    await asyncio.sleep(0.1)
+
+    # Verify BOTH are dead
+    assert not _pid_exists(parent_pid), "Parent should be dead after killpg"
+    assert not _pid_exists(child_pid), "Child should be dead after killpg"
+
+
+async def test_kill_process_group_no_leak_on_none():
+    """Test that _kill_process_group handles None gracefully."""
+    # Should not raise
+    await _kill_process_group(None)
+
+
+async def test_kill_process_group_no_leak_on_exited(tmp_path):
+    """Test that _kill_process_group handles already-exited process."""
+    script = tmp_path / "exit_immediately.sh"
+    script.write_text("#!/bin/bash\nexit 0\n")
+    script.chmod(0o755)
+
+    proc = await asyncio.create_subprocess_exec(
+        str(script),
+        start_new_session=True,
+    )
+    await proc.wait()  # Let it exit
+
+    # Should not raise on already-exited process
+    await _kill_process_group(proc)
+
+
+def _pid_exists(pid: int) -> bool:
+    """Check if a process with given PID exists."""
+    try:
+        os.kill(pid, 0)  # Signal 0 just checks existence
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Process exists but we can't signal it

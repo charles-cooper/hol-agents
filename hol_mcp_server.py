@@ -6,9 +6,11 @@ Sessions are in-memory only. They survive within a single MCP server lifetime
 """
 
 import asyncio
+import os
+import signal
 from dataclasses import dataclass
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastmcp import FastMCP
@@ -226,6 +228,35 @@ async def hol_restart(session: str) -> str:
     return await hol_start.fn(workdir=str(workdir), name=session)
 
 
+async def _kill_process_group(proc):
+    """Kill process group: SIGTERM, wait, SIGKILL if needed."""
+    if proc is None or proc.returncode is not None:
+        return
+
+    pgid = proc.pid
+
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except OSError:
+        return  # Already dead
+
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=1.0)
+        return  # Died gracefully
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        pass
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        return
+
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=0.5)
+    except:
+        pass
+
+
 @mcp.tool()
 async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024, timeout: int = 90) -> str:
     """Run Holmake --qof in directory.
@@ -244,7 +275,6 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
     """
     # Validate timeout
     timeout = max(1, min(timeout, 1800))
-    import os as _os
     workdir_path = Path(workdir).resolve()
     if not workdir_path.exists():
         return f"ERROR: Directory does not exist: {workdir}"
@@ -267,7 +297,7 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
         cmd.append(target)
 
     # Build environment
-    proc_env = _os.environ.copy()
+    proc_env = os.environ.copy()
     if env:
         proc_env.update(env)
 
@@ -279,6 +309,7 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
             env=proc_env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
 
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -322,13 +353,11 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
         return result
 
     except asyncio.TimeoutError:
-        if proc:
-            proc.kill()
         return f"ERROR: Build timed out after {timeout}s."
     except Exception as e:
-        if proc and proc.returncode is None:
-            proc.kill()
         return f"ERROR: {e}"
+    finally:
+        await _kill_process_group(proc)
 
 
 @mcp.tool()

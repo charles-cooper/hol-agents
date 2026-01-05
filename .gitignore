@@ -1,4 +1,5 @@
 .agent-files/
+.agent-files.git/
 .hol/
 __pycache__/
 *.pyc
