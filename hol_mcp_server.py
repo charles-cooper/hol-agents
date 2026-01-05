@@ -8,12 +8,13 @@ Sessions are in-memory only. They survive within a single MCP server lifetime
 import asyncio
 import os
 import signal
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 
 from hol_session import HOLSession, HOLDIR
 from hol_cursor import ProofCursor
@@ -257,8 +258,12 @@ async def _kill_process_group(proc):
         pass
 
 
+# Progress reporting interval for long builds (resets MCP client timeout)
+_PROGRESS_INTERVAL = 10  # seconds
+
+
 @mcp.tool()
-async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024, timeout: int = 90) -> str:
+async def holmake(workdir: str, target: str = None, env: dict = None, log_limit: int = 1024, timeout: int = 90, ctx: Context = None) -> str:
     """Run Holmake --qof in directory.
 
     Args:
@@ -270,8 +275,8 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
 
     Returns: Holmake output (stdout + stderr). On failure, includes recent build logs.
 
-    Design note: Consider whether env vars should be set once at proof_agent
-    session startup (via CLI --env flag) rather than per-build call.
+    Note: For builds > 60s, progress notifications are sent every 10s to prevent
+    MCP client timeout. Configure tool_timeout_sec in ~/.codex/config.toml if needed.
     """
     # Validate timeout
     timeout = max(1, min(timeout, 1800))
@@ -279,9 +284,9 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
     if not workdir_path.exists():
         return f"ERROR: Directory does not exist: {workdir}"
 
-    holmake = HOLDIR / "bin" / "Holmake"
-    if not holmake.exists():
-        return f"ERROR: Holmake not found at {holmake}"
+    holmake_bin = HOLDIR / "bin" / "Holmake"
+    if not holmake_bin.exists():
+        return f"ERROR: Holmake not found at {holmake_bin}"
 
     logs_dir = workdir_path / ".hol" / "logs"
 
@@ -292,7 +297,7 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
             if log_file.is_file():
                 pre_logs[log_file.name] = log_file.stat().st_mtime
 
-    cmd = [str(holmake), "--qof"]
+    cmd = [str(holmake_bin), "--qof"]
     if target:
         cmd.append(target)
 
@@ -312,8 +317,53 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
             start_new_session=True,
         )
 
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        output = stdout.decode("utf-8", errors="replace")
+        # Poll with progress reporting to prevent MCP client timeout
+        start_time = time.time()
+        stdout_chunks = []
+        timed_out = False
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed >= timeout:
+                timed_out = True
+                break
+
+            # Report progress to reset client timeout (MCP resetTimeoutOnProgress)
+            if ctx:
+                try:
+                    await ctx.report_progress(
+                        progress=elapsed,
+                        total=float(timeout),
+                        message=f"Building... {int(elapsed)}s / {timeout}s"
+                    )
+                except Exception:
+                    pass  # Don't fail build if progress reporting fails
+
+            # Wait for output or timeout after interval
+            try:
+                chunk = await asyncio.wait_for(
+                    proc.stdout.read(4096),
+                    timeout=min(_PROGRESS_INTERVAL, timeout - elapsed)
+                )
+                if chunk:
+                    stdout_chunks.append(chunk)
+                else:
+                    # EOF - wait for process to finish
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=5)
+                    except asyncio.TimeoutError:
+                        pass
+                    break
+            except asyncio.TimeoutError:
+                # Check if process finished
+                if proc.returncode is not None:
+                    break
+                continue  # Keep polling
+
+        if timed_out:
+            return f"ERROR: Build timed out after {timeout}s."
+
+        output = b''.join(stdout_chunks).decode("utf-8", errors="replace")
 
         if proc.returncode == 0:
             if env:
@@ -352,8 +402,6 @@ async def holmake(workdir: str, target: str = None, env: dict = None, log_limit:
 
         return result
 
-    except asyncio.TimeoutError:
-        return f"ERROR: Build timed out after {timeout}s."
     except Exception as e:
         return f"ERROR: {e}"
     finally:
