@@ -81,11 +81,11 @@ class AgentConfig:
     task_file: str
     scratch_file: str  # Working state, handoff notes (separate from task intent)
     claude_md: str
-    model: str = "claude-opus-4-20250514"
+    model: str = "claude-opus-4-5-20251101"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 100
     max_context_tokens: int = 100000  # Handoff when context exceeds this
-    max_thinking_tokens: int | None = None  # Extended thinking budget
+    max_thinking_tokens: int = 31999  # Extended thinking budget (ultrathink default)
     fresh: bool = False
 
     @property
@@ -562,10 +562,10 @@ def main():
     parser.add_argument("--claude-md", "-c", help="CLAUDE.md path")
     parser.add_argument("--prompt", "-p", help="Initial prompt")
     parser.add_argument("--fresh", action="store_true", help="Ignore saved session")
-    parser.add_argument("--model", "-m", default="claude-opus-4-20250514")
+    parser.add_argument("--model", "-m", default="claude-opus-4-5-20251101")
     parser.add_argument("--max-messages", type=int, default=100, help="Handoff after N messages")
     parser.add_argument("--max-context-tokens", type=int, default=100000, help="Handoff when context exceeds N tokens")
-    parser.add_argument("--thinking-tokens", type=int, default=None, help="Extended thinking budget")
+    parser.add_argument("--thinking-tokens", type=int, default=31999, help="Extended thinking budget (ultrathink=31999)")
 
     args = parser.parse_args()
 
