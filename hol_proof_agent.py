@@ -173,11 +173,13 @@ def read_file(path: str) -> str:
 
 
 def derive_scratch_file(task_file: str) -> str:
-    """Derive scratch file path from task file: TASK_foo.md -> SCRATCH_foo.md"""
+    """Derive scratch file path from task file: TASK_foo.md / PROMPT_foo.md -> SCRATCH_foo.md"""
     dirname = os.path.dirname(task_file)
     basename = os.path.basename(task_file)
-    if basename.startswith("TASK_"):
-        scratch_name = "SCRATCH_" + basename[5:]
+    for prefix in ("TASK_", "PROMPT_"):
+        if basename.startswith(prefix):
+            scratch_name = "SCRATCH_" + basename[len(prefix):]
+            break
     else:
         scratch_name = "SCRATCH_" + basename
     return os.path.join(dirname, scratch_name)
