@@ -79,6 +79,7 @@ class AgentConfig:
     """Configuration for the HOL proof agent."""
     working_dir: str
     task_file: str
+    scratch_file: str  # Working state, handoff notes (separate from task intent)
     claude_md: str
     model: str = "claude-opus-4-20250514"
     max_consecutive_errors: int = 5
@@ -169,6 +170,17 @@ def read_file(path: str) -> str:
             return f.read()
     except Exception:
         return ""
+
+
+def derive_scratch_file(task_file: str) -> str:
+    """Derive scratch file path from task file: TASK_foo.md -> SCRATCH_foo.md"""
+    dirname = os.path.dirname(task_file)
+    basename = os.path.basename(task_file)
+    if basename.startswith("TASK_"):
+        scratch_name = "SCRATCH_" + basename[5:]
+    else:
+        scratch_name = "SCRATCH_" + basename
+    return os.path.join(dirname, scratch_name)
 
 
 def get_large_files(working_dir: str, byte_threshold: int = 15000, line_threshold: int = 500) -> list:
@@ -300,8 +312,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     # Resuming SDK session - agent has context
                     prompt = initial_prompt or "Continue."
                 else:
-                    # New SDK session - include task file and context in first message
+                    # New SDK session - include task file, scratch file, and context
                     task = read_file(config.task_file)
+                    scratch = read_file(config.scratch_file)
                     init = read_file(os.path.join(config.working_dir, ".hol_init.sml"))
 
                     # Inject HOL state to save agent turns
@@ -349,10 +362,14 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             hol_state += f"\n\n[auto] holmake error: {e}"
 
                     prompt = f"## Task File: {config.task_file}\n{task}\n\n"
+                    if scratch:
+                        prompt += f"## Scratch File: {config.scratch_file}\n{scratch}\n\n"
                     if init:
                         prompt += f"## .hol_init.sml\n{init}\n\n"
 
-                    prompt += "Begin. Check ## Handoff section above for current state."
+                    prompt += "Begin."
+                    if scratch:
+                        prompt += " Check scratch file for previous handoff state."
                     if state.hol_session:
                         prompt += f" Previous HOL session: '{state.hol_session}'."
                     prompt += hol_state
@@ -444,15 +461,13 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                             "1) If you made substantial progress, commit it: "
                             "   - NEVER `git add -A` or `git add .` - only specific .sml files "
                             "   - Use `git diff <file>` to verify before adding "
-                            "2) Ultrathink like a prompt engineer and write a "
-                            f"handoff prompt in {config.task_file} to provide all "
-                            "necessary info but context optimized. Tell the next agent to start "
-                            "work immediately. Include: "
+                            "2) Ultrathink like a prompt engineer and write handoff notes to "
+                            f"{config.scratch_file} (NOT the task file). Include: "
                             "   - What you tried, what worked "
                             "   - What to try next (be specific - this is your only memory) "
-                            "   (goals/holmake are auto-injected at startup)"
+                            "   (goals/holmake are auto-injected at startup) "
                             "3) Leave HOL session running. "
-                            "4) STOP after updating task file."
+                            "4) STOP after updating scratch file."
                         )
 
                         print(f"[SEND] {handoff_prompt}")
@@ -460,7 +475,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         async for msg in client.receive_response():
                             print_message_blocks(msg, prefix="  [HANDOFF] ")
 
-                        print(f"[HANDOFF] Agent updated task file")
+                        print(f"[HANDOFF] Agent updated scratch file")
 
                         # Clear SDK session to force fresh context, but preserve HOL session
                         state.session_id = None
@@ -563,9 +578,11 @@ def main():
                 claude_md = str(candidate)
                 break
 
+    task_file = os.path.abspath(args.task)
     config = AgentConfig(
         working_dir=working_dir,
-        task_file=os.path.abspath(args.task),
+        task_file=task_file,
+        scratch_file=derive_scratch_file(task_file),
         claude_md=claude_md or "",
         model=args.model,
         max_agent_messages=args.max_messages,
@@ -582,6 +599,7 @@ def main():
     print("=" * 60)
     print(f"Working dir: {config.working_dir}")
     print(f"Task: {config.task_file}")
+    print(f"Scratch: {config.scratch_file}")
     print(f"Model: {config.model}")
     print("=" * 60)
 
