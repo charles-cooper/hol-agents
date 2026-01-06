@@ -83,6 +83,8 @@ class AgentConfig:
     model: str = "claude-opus-4-20250514"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 100
+    max_context_tokens: int = 100000  # Handoff when context exceeds this
+    max_thinking_tokens: int | None = None  # Extended thinking budget
     fresh: bool = False
 
     @property
@@ -289,6 +291,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 mcp_servers=MCP_SERVER_CONFIG,
                 resume=state.session_id,
                 can_use_tool=tool_permission,
+                max_thinking_tokens=config.max_thinking_tokens,
             )
 
             async with ClaudeSDKClient(opts) as client:
@@ -418,9 +421,23 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                                 state.hol_session = match.group(1)
                                 print(f"[HOL] Session: {state.hol_session}")
 
-                    # Check message limit
-                    if state.session_message_count >= config.max_agent_messages:
-                        print(f"\n[HANDOFF] Reached {config.max_agent_messages} messages...")
+                    # Check message limit OR context token limit
+                    context_tokens = None
+                    if isinstance(message, ResultMessage) and message.usage:
+                        context_tokens = (
+                            message.usage.get("input_tokens", 0) +
+                            message.usage.get("cache_read_input_tokens", 0) +
+                            message.usage.get("cache_creation_input_tokens", 0)
+                        )
+
+                    should_handoff = state.session_message_count >= config.max_agent_messages
+                    handoff_reason = f"Reached {config.max_agent_messages} messages"
+                    if context_tokens and context_tokens > config.max_context_tokens:
+                        should_handoff = True
+                        handoff_reason = f"Context {context_tokens:,} > {config.max_context_tokens:,} tokens"
+
+                    if should_handoff:
+                        print(f"\n[HANDOFF] {handoff_reason}...")
 
                         handoff_prompt = (
                             "STOP. Context clearing - your todo list will NOT persist. "
@@ -485,10 +502,11 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         model=config.model,
                         system_prompt=system_prompt,
                         allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "mcp__hol__*"],
-                disallowed_tools=["TodoRead", "TodoWrite"],
+                        disallowed_tools=["TodoRead", "TodoWrite"],
                         mcp_servers=MCP_SERVER_CONFIG,
                         resume=state.session_id,
                         can_use_tool=tool_permission,
+                        max_thinking_tokens=config.max_thinking_tokens,
                     )
                     async with ClaudeSDKClient(opts) as client:
                         print(f"[SEND] {user_input}")
@@ -528,7 +546,9 @@ def main():
     parser.add_argument("--prompt", "-p", help="Initial prompt")
     parser.add_argument("--fresh", action="store_true", help="Ignore saved session")
     parser.add_argument("--model", "-m", default="claude-opus-4-20250514")
-    parser.add_argument("--max-messages", type=int, default=100)
+    parser.add_argument("--max-messages", type=int, default=100, help="Handoff after N messages")
+    parser.add_argument("--max-context-tokens", type=int, default=100000, help="Handoff when context exceeds N tokens")
+    parser.add_argument("--thinking-tokens", type=int, default=None, help="Extended thinking budget")
 
     args = parser.parse_args()
 
@@ -549,6 +569,8 @@ def main():
         claude_md=claude_md or "",
         model=args.model,
         max_agent_messages=args.max_messages,
+        max_context_tokens=args.max_context_tokens,
+        max_thinking_tokens=args.thinking_tokens,
         fresh=args.fresh,
     )
 
