@@ -87,6 +87,19 @@ No `rotate()` in goaltree - use `>-` to structure proof order, or `REVERSE tac` 
 3. `gvs[AllCaseEqs()]` too aggressive? Try `fs[]` or `simp[]`
 4. Induction: verify IH applies (check variable names match)
 
+## Housekeeping
+
+Periodically prune stale resources:
+- `hol_sessions()` - check for dead sessions, `hol_stop` any you don't need
+
+## Secondary Goals
+
+These matter but correctness comes first:
+- **File size:** Aim for 200-650 lines per file. Extract helpers if growing too large.
+- **Build time:** Aim for <10s per file. If tactics are slow, try simpler alternatives.
+
+If physically impossible to meet these, prioritize working proofs over speed/size.
+
 ## CLAUDE.md
 
 {claude_md}
