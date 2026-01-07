@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,11 @@ def check_dependencies():
 
 
 def run_cmd(cmd, **kw) -> subprocess.CompletedProcess:
-    """Run command, return CompletedProcess. Never raises."""
+    """Run command, return CompletedProcess. Never raises.
+
+    No timeout: agents (codex/claude) may run for extended periods during
+    complex tasks. Callers should not artificially limit execution time.
+    """
     try:
         return subprocess.run(cmd, capture_output=True, text=True, **kw)
     except Exception as e:
@@ -39,12 +44,16 @@ def run_cmd(cmd, **kw) -> subprocess.CompletedProcess:
 
 
 def extract_verdict(text: str) -> str:
-    """Extract verdict from first 10 non-empty lines. Default NEEDS_WORK."""
-    lines = [l.strip() for l in text.split('\n') if l.strip()][:10]
+    """Extract verdict from first 10 non-empty lines. Default NEEDS_WORK.
+
+    Handles common formats: "APPROVED", "- APPROVED", "VERDICT: APPROVED", etc.
+    """
+    pattern = re.compile(r'^\s*[-*]?\s*(?:VERDICT:?\s*)?(APPROVED|NEEDS_WORK|BLOCKED)', re.IGNORECASE)
+    lines = [l for l in text.split('\n') if l.strip()][:10]
     for line in lines:
-        for verdict in ("APPROVED", "NEEDS_WORK", "BLOCKED"):
-            if line.startswith(verdict):
-                return verdict
+        match = pattern.match(line)
+        if match:
+            return match.group(1).upper()
     return "NEEDS_WORK"
 
 
@@ -55,7 +64,6 @@ def main():
     parser.add_argument("task", type=Path, help="Task file path")
     parser.add_argument("--workdir", "-w", type=Path, default=Path.cwd(), help="Working directory")
     parser.add_argument("--build", "-b", help="Build command to run after implementation")
-    parser.add_argument("--design", "-d", type=Path, help="Design doc to reference")
     parser.add_argument("--max-iter", type=int, default=5, help="Max iterations (default: 5)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without running")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show full prompts")
@@ -75,13 +83,15 @@ def main():
     if not (workdir / ".git").exists():
         print(f"Workdir is not a git repo: {workdir}")
         return 1
+
+    # Require clean worktree so git add . only stages Codex's changes
+    result = run_cmd(["git", "status", "--porcelain"], cwd=workdir)
+    if result.stdout.strip():
+        print(f"Workdir has uncommitted changes - commit or stash first:")
+        print(result.stdout)
+        return 1
+
     task_content = args.task.read_text()
-    design_content = ""
-    if args.design:
-        if not args.design.exists():
-            print(f"Design file not found: {args.design}")
-            return 1
-        design_content = args.design.read_text()
     build_cmd = args.build
     max_iter = args.max_iter
 
@@ -107,10 +117,7 @@ def main():
         # Build Codex prompt
         codex_prompt = f"""## Task
 {task_content}
-"""
-        if design_content:
-            codex_prompt += f"\n## Design Reference\n{design_content}\n"
-        codex_prompt += """
+
 ## Secondary Goals
 - File size: 200-650 lines per file
 - Build time: <10s per file
@@ -156,12 +163,11 @@ First, restate the goal in your own words and outline your implementation plan. 
 
         # 3. Claude validates
         print("\n[CLAUDE] Validating...")
-        design_section = f"\n## Design\n{design_content}\n" if design_content else ""
         validation_prompt = f"""You are the validation gate in a Codex->Claude loop. Your approval commits code; your rejection triggers another Codex iteration. Be thorough--bugs that pass you ship to production.
 
 ## Task
 {task_content}
-{design_section}
+
 ## Codex Summary
 {summary}
 
@@ -173,9 +179,8 @@ First, restate the goal in your own words and outline your implementation plan. 
 
 Read the actual source files. Verify:
 1. Implementation matches task requirements
-2. Implementation matches design (if provided)
-3. Build passes
-4. No bugs or issues
+2. Build passes
+3. No bugs or issues
 
 Respond with exactly one verdict on the FIRST LINE:
 - APPROVED: Task complete and correct
@@ -204,6 +209,12 @@ Respond with exactly one verdict on the FIRST LINE:
         print(f"\n[VERDICT] {verdict}")
 
         if verdict == "APPROVED":
+            # Build must pass to commit
+            if not build_ok:
+                print("[REJECTED] Cannot commit with failing build")
+                feedback = "Build is failing. APPROVED verdict invalid - fix build first."
+                continue
+
             # Check if there are changes to commit
             result = run_cmd(["git", "status", "--porcelain"], cwd=workdir)
             if not result.stdout.strip():
