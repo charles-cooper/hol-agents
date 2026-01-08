@@ -3,10 +3,10 @@
 
 Generic implementation/validation loop:
 - Codex: --full-auto, workspace-write sandbox
-- Claude: validates implementation (can read/run commands, not edit)
+- Claude: validates implementation (can run commands, not edit)
 
 Usage:
-    cd /path/to/project && ./codex_claude_loop.py TASK.md -b "make test"
+    cd /path/to/project && ./codex_claude_loop.py TASK.md
 """
 
 import argparse
@@ -62,8 +62,7 @@ def main():
         description="Codex implements, Claude validates"
     )
     parser.add_argument("task", type=Path, help="Task file path")
-    parser.add_argument("--build", "-b", help="Build command to run after implementation")
-    parser.add_argument("--max-iter", type=int, default=5, help="Max iterations (default: 5)")
+    parser.add_argument("--max-iter", type=int, default=50, help="Max iterations (default: 50)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without running")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show full prompts")
     args = parser.parse_args()
@@ -88,7 +87,6 @@ def main():
         return 1
 
     task_content = args.task.read_text()
-    build_cmd = args.build
     max_iter = args.max_iter
 
     # Setup paths
@@ -97,8 +95,6 @@ def main():
     summary_file = scratch_dir / "codex_summary.md"
 
     print(f"Task: {args.task}")
-    print(f"Workdir: {workdir}")
-    print(f"Build: {build_cmd or 'none'}")
     print(f"Max iterations: {max_iter}")
     print()
 
@@ -145,19 +141,7 @@ First, restate the goal in your own words and outline your implementation plan. 
         summary = summary_file.read_text() if summary_file.exists() else "(no summary generated)"
         print(f"[CODEX SUMMARY]\n{summary}")
 
-        # 2. Build (if configured)
-        build_ok = True
-        build_output = ""
-        if build_cmd:
-            print(f"\n[BUILD] Running: {build_cmd}")
-            result = run_cmd(build_cmd, shell=True, cwd=workdir)
-            build_output = result.stdout + result.stderr
-            build_ok = result.returncode == 0
-            print(f"[BUILD] {'PASS' if build_ok else 'FAIL'}")
-            if not build_ok:
-                print(f"[BUILD OUTPUT]\n{build_output}")
-
-        # 3. Claude validates
+        # 2. Claude validates
         print("\n[CLAUDE] Validating...")
         validation_prompt = f"""You are the validation gate in a Codex->Claude loop. Your approval commits code; your rejection triggers another Codex iteration. Be thorough--bugs that pass you ship to production.
 
@@ -167,15 +151,11 @@ First, restate the goal in your own words and outline your implementation plan. 
 ## Codex Summary
 {summary}
 
-## Build Result
-{"PASS" if build_ok else "FAIL"}
-{build_output if not build_ok else ""}
-
 ## Instructions
 
-Read the actual source files. Verify:
+Read the source files. Run builds/tests as appropriate for the project. Verify:
 1. Implementation matches task requirements
-2. Build passes
+2. Tests pass (run them)
 3. No bugs or issues
 
 Respond with exactly one verdict on the FIRST LINE:
@@ -200,17 +180,11 @@ Respond with exactly one verdict on the FIRST LINE:
         validation = result.stdout
         print(f"\n[VALIDATION]\n{validation}")
 
-        # 4. Check verdict
+        # 3. Check verdict
         verdict = extract_verdict(validation)
         print(f"\n[VERDICT] {verdict}")
 
         if verdict == "APPROVED":
-            # Build must pass to commit
-            if not build_ok:
-                print("[REJECTED] Cannot commit with failing build")
-                feedback = "Build is failing. APPROVED verdict invalid - fix build first."
-                continue
-
             # Check if there are changes to commit
             result = run_cmd(["git", "status", "--porcelain"], cwd=workdir)
             if not result.stdout.strip():
