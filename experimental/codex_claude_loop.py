@@ -3,14 +3,13 @@
 
 Generic implementation/validation loop:
 - Codex: --full-auto, workspace-write sandbox
-- Claude: validates implementation (can run commands, not edit)
+- Claude: validates, commits when ready, or provides feedback
 
 Usage:
     cd /path/to/project && ./codex_claude_loop.py TASK.md
 """
 
 import argparse
-import re
 import shutil
 import subprocess
 import sys
@@ -32,29 +31,14 @@ def check_dependencies():
 
 
 def run_cmd(cmd, **kw) -> subprocess.CompletedProcess:
-    """Run command, return CompletedProcess. Never raises.
-
-    No timeout: agents (codex/claude) may run for extended periods during
-    complex tasks. Callers should not artificially limit execution time.
-    """
-    try:
-        return subprocess.run(cmd, capture_output=True, text=True, **kw)
-    except Exception as e:
-        return subprocess.CompletedProcess(cmd, returncode=-1, stdout="", stderr=str(e))
+    """Run command, return CompletedProcess."""
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
-def extract_verdict(text: str) -> str:
-    """Extract verdict from first 10 non-empty lines. Default NEEDS_WORK.
-
-    Handles common formats: "APPROVED", "- APPROVED", "VERDICT: APPROVED", etc.
-    """
-    pattern = re.compile(r'^\s*[-*]?\s*(?:VERDICT:?\s*)?(APPROVED|NEEDS_WORK|BLOCKED)', re.IGNORECASE)
-    lines = [l for l in text.split('\n') if l.strip()][:10]
-    for line in lines:
-        match = pattern.match(line)
-        if match:
-            return match.group(1).upper()
-    return "NEEDS_WORK"
+def get_head_sha(workdir: Path) -> str:
+    """Get current HEAD SHA."""
+    result = run_cmd(["git", "rev-parse", "HEAD"], cwd=workdir)
+    return result.stdout.strip()
 
 
 def main():
@@ -79,13 +63,6 @@ def main():
         print(f"Not a git repo: {workdir}")
         return 1
 
-    # Require clean worktree so git add . only stages Codex's changes
-    result = run_cmd(["git", "status", "--porcelain"], cwd=workdir)
-    if result.stdout.strip():
-        print(f"Workdir has uncommitted changes - commit or stash first:")
-        print(result.stdout)
-        return 1
-
     task_content = args.task.read_text()
     max_iter = args.max_iter
 
@@ -99,7 +76,6 @@ def main():
     print()
 
     feedback = ""
-    blocked_count = 0
 
     for i in range(max_iter):
         print(f"\n{'='*60}")
@@ -116,6 +92,8 @@ def main():
 
 ## Instructions
 First, restate the goal in your own words and outline your implementation plan. Then implement fully. Keep going until the task is completely resolved.
+
+Do NOT commit - validation and commit is handled separately.
 """
         if feedback:
             codex_prompt += f"\n## Previous Validation Feedback\nAddress this feedback:\n{feedback}"
@@ -141,9 +119,13 @@ First, restate the goal in your own words and outline your implementation plan. 
         summary = summary_file.read_text() if summary_file.exists() else "(no summary generated)"
         print(f"[CODEX SUMMARY]\n{summary}")
 
-        # 2. Claude validates
+        # 2. Claude validates (and commits if ready)
         print("\n[CLAUDE] Validating...")
-        validation_prompt = f"""You are the validation gate in a Codex->Claude loop. Your approval commits code; your rejection triggers another Codex iteration. Be thorough--bugs that pass you ship to production.
+        head_before = get_head_sha(workdir)
+
+        validation_prompt = f"""ultrathink
+
+You are the validation gate in a Codex->Claude loop. Be thorough--bugs that pass you ship to production.
 
 ## Task
 {task_content}
@@ -159,10 +141,17 @@ Read the source files. Run builds/tests as appropriate for the project. Verify:
 3. No bugs or issues
 4. No dead code (but only flag this after everything else works - some code may just not be wired yet)
 
-Respond with exactly one verdict on the FIRST LINE:
-- APPROVED: Task complete and correct
-- NEEDS_WORK: Specific feedback for next iteration
-- BLOCKED: Task cannot be completed as specified
+If the implementation is correct and complete:
+- Stage specific files (git add <file> - NEVER use git add . or stage directories)
+- Commit with a good message (subject <50 chars, body wraps at 72 chars)
+- Say COMPLETE
+
+If there are issues:
+- Provide specific feedback for the next Codex iteration
+- Do NOT commit
+
+If the task cannot be completed as specified:
+- Say BLOCKED and explain why
 """
 
         if args.verbose:
@@ -170,67 +159,29 @@ Respond with exactly one verdict on the FIRST LINE:
 
         result = run_cmd(
             ["claude", "-p", "--model", "opus", "--disallowedTools", "Edit,Write"],
-            input=f"ultrathink\n\n{validation_prompt}",
+            input=validation_prompt,
             cwd=workdir,
         )
         if result.returncode != 0:
             print(f"[CLAUDE ERROR]\n{result.stderr}")
-            # Can't validate - retry iteration
             continue
 
         validation = result.stdout
         print(f"\n[VALIDATION]\n{validation}")
 
-        # 3. Check verdict
-        verdict = extract_verdict(validation)
-        print(f"\n[VERDICT] {verdict}")
-
-        if verdict == "APPROVED":
-            # Check if there are changes to commit
-            result = run_cmd(["git", "status", "--porcelain"], cwd=workdir)
-            if not result.stdout.strip():
-                print("\n[COMPLETE] Task approved (no changes to commit)")
-                return 0
-
-            # Stage and show what's staged
-            run_cmd(["git", "add", "."], cwd=workdir)
-            result = run_cmd(["git", "diff", "--cached", "--stat"], cwd=workdir)
-            print(f"\n[STAGED]\n{result.stdout}")
-
-            # Generate commit message
-            diff_result = run_cmd(["git", "diff", "--cached"], cwd=workdir)
-            result = run_cmd(
-                ["claude", "-p", "--model", "opus", "--disallowedTools", "Edit,Write"],
-                input=f"ultrathink\n\nWrite ONLY a git commit message. Subject line <72 chars, optional body after blank line. No explanation or preamble.\n\nDiff:\n{diff_result.stdout}",
-                cwd=workdir,
-            )
-
-            if result.returncode == 0 and result.stdout.strip():
-                commit_msg = result.stdout.strip()
-            else:
-                commit_msg = f"chore: automated changes for {args.task.stem}"
-                print(f"[WARN] Using fallback commit message")
-
-            result = run_cmd(["git", "commit", "-m", commit_msg], cwd=workdir)
-            if result.returncode != 0:
-                print(f"[COMMIT FAILED]\n{result.stderr}")
-                return 1
-
-            print(f"\n[COMPLETE] Committed:\n{commit_msg}")
+        # Check if Claude committed
+        head_after = get_head_sha(workdir)
+        if head_after != head_before:
+            print(f"\n[COMPLETE] Claude committed: {head_after}")
             return 0
 
-        elif verdict == "BLOCKED":
-            blocked_count += 1
-            print(f"[BLOCKED] Count: {blocked_count}/2")
-            if blocked_count >= 2:
-                print("\n[ABORT] Two consecutive BLOCKED verdicts - giving up")
-                return 1
-            feedback = validation
+        # Check for BLOCKED
+        if "BLOCKED" in validation.upper():
+            print("\n[BLOCKED] Task cannot be completed as specified")
+            return 1
 
-        else:
-            # NEEDS_WORK or unclear - continue with feedback
-            blocked_count = 0
-            feedback = validation
+        # Otherwise, use validation as feedback for next iteration
+        feedback = validation
 
     print(f"\n[FAILED] Max iterations ({max_iter}) reached")
     return 1
