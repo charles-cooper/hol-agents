@@ -58,6 +58,7 @@ def main():
     scratch_dir = workdir / ".agent-files"
     scratch_dir.mkdir(exist_ok=True)
     summary_file = scratch_dir / "codex_summary.md"
+    validation_file = scratch_dir / "claude_validation.md"
 
     print(f"Task: {args.task}")
     print(f"Max iterations: {max_iter}")
@@ -151,6 +152,7 @@ Otherwise your output becomes feedback for the next Codex iteration. Be specific
             continue
 
         validation = result.stdout
+        validation_file.write_text(validation)
         print(f"\n[VALIDATION]\n{validation}")
 
         # Check for completion markers at end of output
