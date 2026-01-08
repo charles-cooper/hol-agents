@@ -157,6 +157,7 @@ Read the source files. Run builds/tests as appropriate for the project. Verify:
 1. Implementation matches task requirements
 2. Tests pass (run them)
 3. No bugs or issues
+4. No dead code (but only flag this after everything else works - some code may just not be wired yet)
 
 Respond with exactly one verdict on the FIRST LINE:
 - APPROVED: Task complete and correct
