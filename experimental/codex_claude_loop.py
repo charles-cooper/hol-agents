@@ -30,11 +30,6 @@ def check_dependencies():
         sys.exit(1)
 
 
-def run_cmd(cmd, **kw) -> subprocess.CompletedProcess:
-    """Run command, return CompletedProcess."""
-    return subprocess.run(cmd, capture_output=True, text=True, **kw)
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Codex implements, Claude validates"
@@ -42,7 +37,6 @@ def main():
     parser.add_argument("task", type=Path, help="Task file path")
     parser.add_argument("--max-iter", type=int, default=50, help="Max iterations (default: 50)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without running")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show full prompts")
     args = parser.parse_args()
 
     check_dependencies()
@@ -99,9 +93,6 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
             print(f"[DRY RUN] Codex prompt:\n{codex_prompt}")
             return 0
 
-        if args.verbose:
-            print(f"\n[CODEX PROMPT]\n{codex_prompt}\n")
-
         # 1. Codex implements (stream output to terminal for visibility)
         print("\n[CODEX] Implementing...")
         result = subprocess.run(
@@ -152,16 +143,15 @@ If the task cannot be completed as specified:
 If neither COMPLETE nor BLOCKED, your output becomes feedback for the next Codex iteration.
 """
 
-        if args.verbose:
-            print(f"\n[VALIDATION PROMPT]\n{validation_prompt}\n")
-
-        result = run_cmd(
+        result = subprocess.run(
             ["claude", "-p", "--model", "opus", "--disallowedTools", "Edit,Write"],
             input=validation_prompt,
+            text=True,
+            stdout=subprocess.PIPE,
             cwd=workdir,
         )
         if result.returncode != 0:
-            print(f"[CLAUDE ERROR]\n{result.stderr}")
+            feedback = "Claude validation failed (see output above)"
             continue
 
         validation = result.stdout
