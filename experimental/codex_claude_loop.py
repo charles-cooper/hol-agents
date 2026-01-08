@@ -131,16 +131,13 @@ Read the source files. Run builds/tests as appropriate for the project. Verify:
 If the implementation is correct and complete:
 - Stage specific files (git add <file> - NEVER use git add . or stage directories)
 - Commit with a good message (subject <50 chars, body wraps at 72 chars)
-- Say COMPLETE
-
-If there are issues:
-- Provide specific feedback for the next Codex iteration
-- Do NOT commit
+- End your response with exactly: [COMPLETE]
 
 If the task cannot be completed as specified:
-- Say BLOCKED and explain why
+- Explain why
+- End your response with exactly: [BLOCKED]
 
-If neither COMPLETE nor BLOCKED, your output becomes feedback for the next Codex iteration.
+Otherwise your output becomes feedback for the next Codex iteration (do NOT end with [COMPLETE] or [BLOCKED]).
 """
 
         result = subprocess.run(
@@ -157,12 +154,13 @@ If neither COMPLETE nor BLOCKED, your output becomes feedback for the next Codex
         validation = result.stdout
         print(f"\n[VALIDATION]\n{validation}")
 
-        # Check for completion or blocked
-        if "COMPLETE" in validation.upper():
+        # Check for completion markers at end of output
+        validation_stripped = validation.strip()
+        if validation_stripped.endswith("[COMPLETE]"):
             print("\n[COMPLETE] Task finished")
             return 0
 
-        if "BLOCKED" in validation.upper():
+        if validation_stripped.endswith("[BLOCKED]"):
             print("\n[BLOCKED] Task cannot be completed as specified")
             return 1
 
