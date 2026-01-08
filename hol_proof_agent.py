@@ -102,29 +102,8 @@ class AgentState:
     session_message_count: int = 0
     hol_session: Optional[str] = None  # HOL session name (key into _sessions)
     holmake_env: Optional[dict] = None  # env vars for holmake
-    # Usage tracking
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_creation_tokens: int = 0
-    cache_read_tokens: int = 0
-    total_cost_usd: float = 0.0
-
-    def add_usage(self, usage: dict, cost: float) -> None:
-        """Accumulate token usage from ResultMessage."""
-        self.input_tokens += usage.get("input_tokens", 0)
-        self.output_tokens += usage.get("output_tokens", 0)
-        self.cache_creation_tokens += usage.get("cache_creation_input_tokens", 0)
-        self.cache_read_tokens += usage.get("cache_read_input_tokens", 0)
-        self.total_cost_usd += cost
-
-    def usage_summary(self) -> str:
-        """Return formatted usage string with cache hit rate."""
-        total_input = self.input_tokens + self.cache_creation_tokens + self.cache_read_tokens
-        cache_rate = (self.cache_read_tokens / total_input * 100) if total_input > 0 else 0.0
-        return (
-            f"In: {self.input_tokens:,} | Out: {self.output_tokens:,} | "
-            f"Cache: {cache_rate:.1f}% | ${self.total_cost_usd:.2f}"
-        )
+    # Last turn's context size (for gauging context window usage)
+    last_context_tokens: int = 0
 
     def save(self) -> None:
         with open(self.path, 'w') as f:
@@ -134,11 +113,6 @@ class AgentState:
                 "session_message_count": self.session_message_count,
                 "hol_session": self.hol_session,
                 "holmake_env": self.holmake_env,
-                "input_tokens": self.input_tokens,
-                "output_tokens": self.output_tokens,
-                "cache_creation_tokens": self.cache_creation_tokens,
-                "cache_read_tokens": self.cache_read_tokens,
-                "total_cost_usd": self.total_cost_usd,
             }, f)
 
     @classmethod
@@ -153,11 +127,6 @@ class AgentState:
                     session_message_count=data.get("session_message_count", 0),
                     hol_session=data.get("hol_session"),
                     holmake_env=data.get("holmake_env"),
-                    input_tokens=data.get("input_tokens", 0),
-                    output_tokens=data.get("output_tokens", 0),
-                    cache_creation_tokens=data.get("cache_creation_tokens", 0),
-                    cache_read_tokens=data.get("cache_read_tokens", 0),
-                    total_cost_usd=data.get("total_cost_usd", 0.0),
                 )
         except Exception:
             return cls(path=path)
@@ -413,7 +382,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     if msg_type == "AssistantMessage":
                         state.session_message_count += 1
                         state.message_count += 1
-                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}] (total: {state.message_count})")
+                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}] (context: {state.last_context_tokens:,} tokens)")
                         # Sync holmake_env from session entry
                         if state.hol_session and state.hol_session in _sessions:
                             entry_env = _sessions[state.hol_session].holmake_env
@@ -427,7 +396,6 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         if "PROOF_COMPLETE:" in text:
                             summary = text.split("PROOF_COMPLETE:")[-1].strip()
                             print(f"\n[COMPLETE] {summary}")
-                            print(f"[USAGE TOTAL] {state.usage_summary()}")
                             if os.path.exists(state.path):
                                 os.remove(state.path)
                             return True
@@ -482,19 +450,19 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         # Clear SDK session to force fresh context, but preserve HOL session
                         state.session_id = None
                         state.session_message_count = 0
+                        state.last_context_tokens = 0
                         state.save()
                         print(f"[HANDOFF] Cleared SDK session, {state.message_count} total, HOL '{state.hol_session}'")
                         break
 
-                    # Result message - capture usage and send continue prompt
+                    # Result message - capture context size and send continue prompt
                     if isinstance(message, ResultMessage):
-                        # Capture usage if available
-                        print(f"  [RESULT] usage={message.usage}, cost={message.total_cost_usd}")
                         if message.usage:
-                            cost = message.total_cost_usd or 0.0
-                            state.add_usage(message.usage, cost)
-                            print(f"  [USAGE] {state.usage_summary()}")
-                            state.save()
+                            state.last_context_tokens = (
+                                message.usage.get("input_tokens", 0) +
+                                message.usage.get("cache_read_input_tokens", 0) +
+                                message.usage.get("cache_creation_input_tokens", 0)
+                            )
 
                         if message.result:
                             print(f"  [RESULT TEXT] {message.result}")
@@ -506,8 +474,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
         except KeyboardInterrupt:
             state.save()
-            print(f"\n[INTERRUPT] State saved")
-            print(f"[USAGE TOTAL] {state.usage_summary()}")
+            print(f"\n[INTERRUPT] State saved (context: {state.last_context_tokens:,} tokens)")
             print("  Enter message for Claude, 'q' to quit, empty to continue")
             try:
                 user_input = input("\n> ").strip()
