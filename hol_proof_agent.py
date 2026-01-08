@@ -119,7 +119,6 @@ class AgentConfig:
     model: str = "claude-opus-4-5-20251101"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 100
-    max_context_tokens: int = 100000  # Handoff when context exceeds this
     max_thinking_tokens: int = 31999  # Extended thinking budget (ultrathink default)
     fresh: bool = False
     enable_logging: bool = True
@@ -138,8 +137,6 @@ class AgentState:
     session_message_count: int = 0
     hol_session: Optional[str] = None  # HOL session name (key into _sessions)
     holmake_env: Optional[dict] = None  # env vars for holmake
-    # Last turn's context size (for gauging context window usage)
-    last_context_tokens: int = 0
 
     def save(self) -> None:
         with open(self.path, 'w') as f:
@@ -422,7 +419,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     if msg_type == "AssistantMessage":
                         state.session_message_count += 1
                         state.message_count += 1
-                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}] (context: {state.last_context_tokens:,} tokens)")
+                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}]")
                         # Sync holmake_env from session entry
                         if state.hol_session and state.hol_session in _sessions:
                             entry_env = _sessions[state.hol_session].holmake_env
@@ -448,22 +445,9 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                                 state.hol_session = match.group(1)
                                 print(f"[HOL] Session: {state.hol_session}")
 
-                    # Check message limit OR context token limit
-                    context_tokens = None
-                    if isinstance(message, ResultMessage) and message.usage:
-                        context_tokens = (
-                            message.usage.get("input_tokens", 0) +
-                            message.usage.get("cache_read_input_tokens", 0) +
-                            message.usage.get("cache_creation_input_tokens", 0)
-                        )
-
-                    should_handoff = state.session_message_count >= config.max_agent_messages
-                    handoff_reason = f"Reached {config.max_agent_messages} messages"
-                    if context_tokens and context_tokens > config.max_context_tokens:
-                        should_handoff = True
-                        handoff_reason = f"Context {context_tokens:,} > {config.max_context_tokens:,} tokens"
-
-                    if should_handoff:
+                    # Check message limit
+                    if state.session_message_count >= config.max_agent_messages:
+                        handoff_reason = f"Reached {config.max_agent_messages} messages"
                         print(f"\n[HANDOFF] {handoff_reason}...")
 
                         handoff_prompt = (
@@ -490,20 +474,12 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         # Clear SDK session to force fresh context, but preserve HOL session
                         state.session_id = None
                         state.session_message_count = 0
-                        state.last_context_tokens = 0
                         state.save()
                         print(f"[HANDOFF] Cleared SDK session, {state.message_count} total, HOL '{state.hol_session}'")
                         break
 
-                    # Result message - capture context size and send continue prompt
+                    # Result message - send continue prompt
                     if isinstance(message, ResultMessage):
-                        if message.usage:
-                            state.last_context_tokens = (
-                                message.usage.get("input_tokens", 0) +
-                                message.usage.get("cache_read_input_tokens", 0) +
-                                message.usage.get("cache_creation_input_tokens", 0)
-                            )
-
                         if message.result:
                             print(f"  [RESULT TEXT] {message.result}")
                         cont = "Continue. PROOF_COMPLETE when holmake passes with no cheats."
@@ -514,7 +490,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
         except KeyboardInterrupt:
             state.save()
-            print(f"\n[INTERRUPT] State saved (context: {state.last_context_tokens:,} tokens)")
+            print(f"\n[INTERRUPT] State saved")
             print("  Enter message for Claude, 'q' to quit, empty to continue")
             try:
                 user_input = input("\n> ").strip()
@@ -571,7 +547,6 @@ def main():
     parser.add_argument("--fresh", action="store_true", help="Ignore saved session")
     parser.add_argument("--model", "-m", default="claude-opus-4-5-20251101")
     parser.add_argument("--max-messages", type=int, default=100, help="Handoff after N messages")
-    parser.add_argument("--max-context-tokens", type=int, default=100000, help="Handoff when context exceeds N tokens")
     parser.add_argument("--thinking-tokens", type=int, default=31999, help="Extended thinking budget (ultrathink=31999)")
     parser.add_argument("--no-log", action="store_true", help="Disable debug logging to file")
 
@@ -596,7 +571,6 @@ def main():
         claude_md=claude_md or "",
         model=args.model,
         max_agent_messages=args.max_messages,
-        max_context_tokens=args.max_context_tokens,
         max_thinking_tokens=args.thinking_tokens,
         fresh=args.fresh,
         enable_logging=not args.no_log,
