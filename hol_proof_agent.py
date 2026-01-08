@@ -311,6 +311,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 resume=state.session_id,
                 can_use_tool=tool_permission,
                 max_thinking_tokens=config.max_thinking_tokens,
+                include_partial_messages=True,  # Log StreamEvents to see what's available
             )
 
             async with ClaudeSDKClient(opts) as client:
@@ -400,8 +401,13 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 # Process messages
                 async for message in client.receive_messages():
                     msg_type = type(message).__name__
-                    print(f"  [MSG TYPE] {msg_type}")
                     log_message(message)
+
+                    # Skip StreamEvents from console (logged above for analysis)
+                    if msg_type == "StreamEvent":
+                        continue
+
+                    print(f"  [MSG TYPE] {msg_type}")
 
                     # Capture session_id from multiple sources
                     new_session_id = None
