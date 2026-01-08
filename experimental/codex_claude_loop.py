@@ -88,6 +88,9 @@ def main():
 First, restate the goal in your own words and outline your implementation plan. Then implement fully. Keep going until the task is completely resolved.
 
 Do NOT commit - validation and commit is handled separately.
+Do NOT modify the task file. Use a scratch file (e.g. .agent-files/SCRATCH_<slug>.md) for notes/progress.
+
+If you hit a blocker or can't complete, it's ok to stop and explain the issue. Claude will review and provide guidance for the next iteration.
 """
         if feedback:
             codex_prompt += f"\n## Previous Validation Feedback\nAddress this feedback:\n{feedback}"
