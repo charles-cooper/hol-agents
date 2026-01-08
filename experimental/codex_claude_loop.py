@@ -133,11 +133,10 @@ If the implementation is correct and complete:
 - Commit with a good message (subject <50 chars, body wraps at 72 chars)
 - End your response with exactly: [COMPLETE]
 
-If the task cannot be completed as specified:
-- Explain why
+IF AND ONLY IF THE task requires human intervention (i.e., the theorem actually cannot be proven):
 - End your response with exactly: [BLOCKED]
 
-Otherwise your output becomes feedback for the next Codex iteration (do NOT end with [COMPLETE] or [BLOCKED]).
+Otherwise your output becomes feedback for the next Codex iteration. Be specific about what files to change and how.
 """
 
         result = subprocess.run(
