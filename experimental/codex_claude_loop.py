@@ -35,12 +35,6 @@ def run_cmd(cmd, **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
-def get_head_sha(workdir: Path) -> str:
-    """Get current HEAD SHA."""
-    result = run_cmd(["git", "rev-parse", "HEAD"], cwd=workdir)
-    return result.stdout.strip()
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Codex implements, Claude validates"
@@ -121,7 +115,6 @@ Do NOT commit - validation and commit is handled separately.
 
         # 2. Claude validates (and commits if ready)
         print("\n[CLAUDE] Validating...")
-        head_before = get_head_sha(workdir)
 
         validation_prompt = f"""ultrathink
 
@@ -152,6 +145,8 @@ If there are issues:
 
 If the task cannot be completed as specified:
 - Say BLOCKED and explain why
+
+If neither COMPLETE nor BLOCKED, your output becomes feedback for the next Codex iteration.
 """
 
         if args.verbose:
@@ -169,13 +164,11 @@ If the task cannot be completed as specified:
         validation = result.stdout
         print(f"\n[VALIDATION]\n{validation}")
 
-        # Check if Claude committed
-        head_after = get_head_sha(workdir)
-        if head_after != head_before:
-            print(f"\n[COMPLETE] Claude committed: {head_after}")
+        # Check for completion or blocked
+        if "COMPLETE" in validation.upper():
+            print("\n[COMPLETE] Task finished")
             return 0
 
-        # Check for BLOCKED
         if "BLOCKED" in validation.upper():
             print("\n[BLOCKED] Task cannot be completed as specified")
             return 1
