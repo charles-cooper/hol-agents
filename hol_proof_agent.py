@@ -436,9 +436,8 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     # Log and check for completion
                     texts = print_message_blocks(message)
                     for text in texts:
-                        if "PROOF_COMPLETE:" in text:
-                            summary = text.split("PROOF_COMPLETE:")[-1].strip()
-                            print(f"\n[COMPLETE] {summary}")
+                        if text.startswith("[PROOF_COMPLETE]"):
+                            print(f"\n[COMPLETE]")
                             if os.path.exists(state.path):
                                 os.remove(state.path)
                             return True
@@ -488,7 +487,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     if isinstance(message, ResultMessage):
                         if message.result:
                             print(f"  [RESULT TEXT] {message.result}")
-                        cont = "Continue. PROOF_COMPLETE when holmake passes with no cheats."
+                        cont = "Continue. Start your message with [PROOF_COMPLETE] when done."
                         print(f"[SEND] {cont}")
                         await client.query(cont)
 
