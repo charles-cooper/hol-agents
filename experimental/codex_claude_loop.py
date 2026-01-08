@@ -102,15 +102,15 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
         if args.verbose:
             print(f"\n[CODEX PROMPT]\n{codex_prompt}\n")
 
-        # 1. Codex implements
+        # 1. Codex implements (stream output to terminal for visibility)
         print("\n[CODEX] Implementing...")
-        result = run_cmd(
+        result = subprocess.run(
             ["codex", "exec", "--full-auto", "-o", str(summary_file)],
             input=codex_prompt,
+            text=True,
         )
         if result.returncode != 0:
-            print(f"[CODEX ERROR]\n{result.stderr}")
-            feedback = f"Codex failed with error:\n{result.stderr}"
+            feedback = "Codex failed (see output above)"
             continue
 
         summary = summary_file.read_text() if summary_file.exists() else "(no summary generated)"
