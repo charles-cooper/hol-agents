@@ -25,25 +25,37 @@ from claude_agent_sdk import (
 from hol_mcp_server import mcp as hol_mcp, _sessions, hol_sessions, hol_send, holmake, set_agent_state
 
 
-_log_file = None
+_log_fh = None
+_log_path = None
+MAX_LOG_SIZE = 75 * 1024 * 1024  # 75 MB
 
 
 def setup_logging(working_dir: str):
-    """Setup file-based logging for debug output."""
-    global _log_file
-    log_dir = os.path.join(working_dir, ".agent-files", "logs")
+    global _log_fh, _log_path
+    log_dir = os.path.join(working_dir, ".claude", "logs")
     os.makedirs(log_dir, exist_ok=True)
-    _log_file = open(os.path.join(log_dir, "hol_agent_debug.log"), 'a', buffering=1)
+    _log_path = os.path.join(log_dir, "hol_agent_debug.log")
+    _log_fh = open(_log_path, 'a', buffering=1)
+
+
+def _rotate_log():
+    global _log_fh
+    _log_fh.close()
+    backup = _log_path + '.old'
+    if os.path.exists(backup):
+        os.remove(backup)
+    os.rename(_log_path, backup)
+    _log_fh = open(_log_path, 'w', buffering=1)
 
 
 def log(msg: str):
-    """Log message to file with timestamp."""
-    if _log_file:
-        print(f"{datetime.now():%H:%M:%S} {msg}", file=_log_file)
+    if _log_fh:
+        print(f"{datetime.now():%H:%M:%S} {msg}", file=_log_fh)
+        if _log_fh.tell() > MAX_LOG_SIZE:
+            _rotate_log()
 
 
 def log_message(message):
-    """Dump SDK message to log file."""
     log(f"{type(message).__name__}: {json.dumps(asdict(message), default=str)}")
 
 
