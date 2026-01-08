@@ -9,7 +9,8 @@ import re
 import shlex
 import sys
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Optional
 
 from claude_agent_sdk import (
@@ -22,6 +23,28 @@ from claude_agent_sdk import (
 
 # Import MCP server instance - allows HOL sessions to persist across handoffs
 from hol_mcp_server import mcp as hol_mcp, _sessions, hol_sessions, hol_send, holmake, set_agent_state
+
+
+_log_file = None
+
+
+def setup_logging(working_dir: str):
+    """Setup file-based logging for debug output."""
+    global _log_file
+    log_dir = os.path.join(working_dir, ".agent-files", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    _log_file = open(os.path.join(log_dir, "hol_agent_debug.log"), 'a', buffering=1)
+
+
+def log(msg: str):
+    """Log message to file with timestamp."""
+    if _log_file:
+        print(f"{datetime.now():%H:%M:%S} {msg}", file=_log_file)
+
+
+def log_message(message):
+    """Dump SDK message to log file."""
+    log(f"{type(message).__name__}: {json.dumps(asdict(message), default=str)}")
 
 
 # =============================================================================
@@ -87,6 +110,7 @@ class AgentConfig:
     max_context_tokens: int = 100000  # Handoff when context exceeds this
     max_thinking_tokens: int = 31999  # Extended thinking budget (ultrathink default)
     fresh: bool = False
+    enable_logging: bool = True
 
     @property
     def state_path(self) -> str:
@@ -245,6 +269,9 @@ MCP_SERVER_CONFIG = {
 
 async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -> bool:
     """Run the agent until completion."""
+    if config.enable_logging:
+        setup_logging(config.working_dir)
+        log(f"=== Agent started: {config.task_file} ===")
 
     system_prompt = build_system_prompt(config)
     error_count = 0
@@ -365,6 +392,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 async for message in client.receive_messages():
                     msg_type = type(message).__name__
                     print(f"  [MSG TYPE] {msg_type}")
+                    log_message(message)
 
                     # Capture session_id from multiple sources
                     new_session_id = None
@@ -533,6 +561,7 @@ def main():
     parser.add_argument("--max-messages", type=int, default=100, help="Handoff after N messages")
     parser.add_argument("--max-context-tokens", type=int, default=100000, help="Handoff when context exceeds N tokens")
     parser.add_argument("--thinking-tokens", type=int, default=31999, help="Extended thinking budget (ultrathink=31999)")
+    parser.add_argument("--no-log", action="store_true", help="Disable debug logging to file")
 
     args = parser.parse_args()
 
@@ -558,6 +587,7 @@ def main():
         max_context_tokens=args.max_context_tokens,
         max_thinking_tokens=args.thinking_tokens,
         fresh=args.fresh,
+        enable_logging=not args.no_log,
     )
 
     if args.fresh and os.path.exists(config.state_path):
