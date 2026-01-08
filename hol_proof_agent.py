@@ -20,6 +20,7 @@ from claude_agent_sdk import (
     PermissionResultDeny,
     ResultMessage,
 )
+from claude_agent_sdk.types import StreamEvent
 
 # Import MCP server instance - allows HOL sessions to persist across handoffs
 from hol_mcp_server import mcp as hol_mcp, _sessions, hol_sessions, hol_send, holmake, set_agent_state
@@ -119,6 +120,7 @@ class AgentConfig:
     model: str = "claude-opus-4-5-20251101"
     max_consecutive_errors: int = 5
     max_agent_messages: int = 100
+    max_context_tokens: int = 100000  # Handoff when context size exceeds this (half of 200k)
     max_thinking_tokens: int = 31999  # Extended thinking budget (ultrathink default)
     fresh: bool = False
     enable_logging: bool = True
@@ -290,7 +292,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
     state = AgentState.load(config.state_path)
     set_agent_state(state)  # Enable direct holmake_env capture
 
-    print(f"[AGENT] Starting (handoff every {config.max_agent_messages} messages)...")
+    print(f"[AGENT] Starting (handoff at {config.max_context_tokens:,} tokens or {config.max_agent_messages} messages)...")
 
     while True:
         print(f"\n{'='*60}")
@@ -311,7 +313,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 resume=state.session_id,
                 can_use_tool=tool_permission,
                 max_thinking_tokens=config.max_thinking_tokens,
-                include_partial_messages=True,  # Log StreamEvents to see what's available
+                include_partial_messages=True,  # Get StreamEvents for per-turn token tracking
             )
 
             async with ClaudeSDKClient(opts) as client:
@@ -398,14 +400,24 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     print(f"[SESSION] ID: {state.session_id}")
                     state.save()
 
+                # Track context tokens from StreamEvents
+                context_tokens = 0
+
                 # Process messages
                 async for message in client.receive_messages():
                     msg_type = type(message).__name__
                     log_message(message)
 
-                    # Skip StreamEvents from console (logged above for analysis)
-                    if msg_type == "StreamEvent":
-                        continue
+                    # Extract context size from StreamEvent message_start
+                    if isinstance(message, StreamEvent):
+                        event = message.event
+                        if event.get("type") == "message_start":
+                            usage = event.get("message", {}).get("usage", {})
+                            input_tokens = usage.get("input_tokens", 0)
+                            cache_read = usage.get("cache_read_input_tokens", 0)
+                            cache_create = usage.get("cache_creation_input_tokens", 0)
+                            context_tokens = input_tokens + cache_read + cache_create
+                        continue  # Don't process StreamEvents further
 
                     print(f"  [MSG TYPE] {msg_type}")
 
@@ -425,7 +437,7 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                     if msg_type == "AssistantMessage":
                         state.session_message_count += 1
                         state.message_count += 1
-                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}]")
+                        print(f"[MSG {state.session_message_count}/{config.max_agent_messages}] [CTX {context_tokens:,}]")
                         # Sync holmake_env from session entry
                         if state.hol_session and state.hol_session in _sessions:
                             entry_env = _sessions[state.hol_session].holmake_env
@@ -450,9 +462,14 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                                 state.hol_session = match.group(1)
                                 print(f"[HOL] Session: {state.hol_session}")
 
-                    # Check message limit
-                    if state.session_message_count >= config.max_agent_messages:
+                    # Check message limit or context token limit
+                    handoff_reason = None
+                    if context_tokens >= config.max_context_tokens:
+                        handoff_reason = f"Context size {context_tokens:,} >= {config.max_context_tokens:,} tokens"
+                    elif state.session_message_count >= config.max_agent_messages:
                         handoff_reason = f"Reached {config.max_agent_messages} messages"
+
+                    if handoff_reason:
                         print(f"\n[HANDOFF] {handoff_reason}...")
 
                         handoff_prompt = (
@@ -552,6 +569,7 @@ def main():
     parser.add_argument("--fresh", action="store_true", help="Ignore saved session")
     parser.add_argument("--model", "-m", default="claude-opus-4-5-20251101")
     parser.add_argument("--max-messages", type=int, default=100, help="Handoff after N messages")
+    parser.add_argument("--max-context-tokens", type=int, default=100000, help="Handoff when context exceeds N tokens (default 100k = half of 200k window)")
     parser.add_argument("--thinking-tokens", type=int, default=31999, help="Extended thinking budget (ultrathink=31999)")
     parser.add_argument("--no-log", action="store_true", help="Disable debug logging to file")
 
@@ -576,6 +594,7 @@ def main():
         claude_md=claude_md or "",
         model=args.model,
         max_agent_messages=args.max_messages,
+        max_context_tokens=args.max_context_tokens,
         max_thinking_tokens=args.thinking_tokens,
         fresh=args.fresh,
         enable_logging=not args.no_log,
