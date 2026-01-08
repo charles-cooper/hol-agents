@@ -108,7 +108,7 @@ Do NOT commit - validation and commit is handled separately.
         # 1. Codex implements
         print("\n[CODEX] Implementing...")
         result = run_cmd(
-            ["codex", "exec", "--full-auto", "-C", str(workdir), "-o", str(summary_file)],
+            ["codex", "exec", "--full-auto", "-o", str(summary_file)],
             input=codex_prompt,
         )
         if result.returncode != 0:
