@@ -6,7 +6,7 @@ Generic implementation/validation loop:
 - Claude: validates implementation (can read/run commands, not edit)
 
 Usage:
-    ./codex_claude_loop.py TASK.md -w /path/to/project -b "make test"
+    cd /path/to/project && ./codex_claude_loop.py TASK.md -b "make test"
 """
 
 import argparse
@@ -62,7 +62,6 @@ def main():
         description="Codex implements, Claude validates"
     )
     parser.add_argument("task", type=Path, help="Task file path")
-    parser.add_argument("--workdir", "-w", type=Path, default=Path.cwd(), help="Working directory")
     parser.add_argument("--build", "-b", help="Build command to run after implementation")
     parser.add_argument("--max-iter", type=int, default=5, help="Max iterations (default: 5)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without running")
@@ -75,13 +74,10 @@ def main():
         print(f"Task file not found: {args.task}")
         return 1
 
-    # Validate and load
-    workdir = args.workdir.resolve()
-    if not workdir.is_dir():
-        print(f"Workdir not found: {workdir}")
-        return 1
+    # Validate cwd is a git repo
+    workdir = Path.cwd()
     if not (workdir / ".git").exists():
-        print(f"Workdir is not a git repo: {workdir}")
+        print(f"Not a git repo: {workdir}")
         return 1
 
     # Require clean worktree so git add . only stages Codex's changes
