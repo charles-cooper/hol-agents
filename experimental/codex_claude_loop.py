@@ -134,10 +134,9 @@ Read the source files. Run builds/tests as appropriate for the project. Verify:
 3. No bugs or issues
 4. No dead code (but only flag this after everything else works - some code may just not be wired yet)
 
-If the implementation is correct and complete:
-- Stage specific files (git add <file> - NEVER use git add . or stage directories)
-- Commit with a good message (subject <50 chars, body wraps at 72 chars)
-- End your response with exactly: [COMPLETE]
+Commit any complete chunk of work (stage specific files only, never git add . or directories).
+
+When entire task is done, end with exactly: [COMPLETE]
 
 IF AND ONLY IF THE task requires human intervention (i.e., the theorem actually cannot be proven):
 - End your response with exactly: [BLOCKED]
