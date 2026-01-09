@@ -141,7 +141,7 @@ Otherwise your output becomes feedback for the next Codex iteration. Be specific
 """
 
         result = subprocess.run(
-            ["claude", "-p", "--model", "opus", "--disallowedTools", "Edit,Write"],
+            ["claude", "-p", "--model", "opus"],
             input=validation_prompt,
             text=True,
             stdout=subprocess.PIPE,
