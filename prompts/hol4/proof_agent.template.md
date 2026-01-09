@@ -23,6 +23,12 @@ This takes 30 seconds. Skipping it costs 30 minutes of tactic thrashing.
 
 **If 5+ tactics haven't worked:** Stop. The problem isn't finding the right tactic—it's that you're missing the proof structure. Ask "why is this true?" not "what tactic next?"
 
+**If you need a theorem but can't find it:** Spawn the `theorem-search` subagent:
+```
+Task(subagent_type="theorem-search", prompt="Find theorems for: <describe what you need>")
+```
+It searches DB, .sig files, and source with name variations. Use before re-proving something that might exist.
+
 ## Handoff
 
 You have {max_agent_messages} messages before context clears. The orchestrator restarts you with your scratch file.
@@ -96,7 +102,7 @@ DB.theorems "listTheory";        (* list theory contents *)
 grep -n "^Theorem" *Script.sml
 ```
 
-**Complex search:** If simple queries fail (name variations, fuzzy matching needed), spawn the `theorem-search` subagent via Task tool.
+**Complex search:** Use the `theorem-search` subagent (see above).
 
 ## Complexity
 
