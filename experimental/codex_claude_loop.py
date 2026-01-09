@@ -85,7 +85,9 @@ def main():
 - Build time: <10s per file
 
 ## Instructions
-First, restate the goal in your own words and outline your implementation plan. Then implement fully. Keep going until the task is completely resolved.
+First, read any referenced design documents (e.g., DESIGN_*.md files mentioned in the task). The design document is the source of truth - if the task file contains code snippets that contradict the design, follow the design.
+
+Then restate the goal in your own words and outline your implementation plan. Then implement fully. Keep going until the task is completely resolved.
 
 Commit completed chunks of work as you go (stage specific files, never `git add .` or directories).
 ONLY modify the task file to check off completed items and list scratch files in use. Use one or more scratch files (e.g. .agent-files/SCRATCH_<slug>.md) for notes/progress.
