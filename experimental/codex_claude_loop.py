@@ -166,6 +166,7 @@ Otherwise your output becomes feedback for the next Codex iteration. Be specific
         )
         if result.returncode != 0:
             feedback = "Claude validation failed (see output above)"
+            validation_file.write_text(feedback)
             continue
 
         validation = result.stdout
