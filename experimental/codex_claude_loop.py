@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without running")
     # TODO: maybe default should be resume, --no-resume or --fresh turns it off
     parser.add_argument("--resume", action="store_true", help="Load previous validation as feedback for Codex")
+    parser.add_argument("--validate-only", action="store_true", help="Skip Codex, run Claude validation only")
     args = parser.parse_args()
 
     check_dependencies()
@@ -107,19 +108,28 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
             capture_output=True, text=True, cwd=workdir
         ).stdout.strip()
 
-        # 1. Codex implements (stream output to terminal for visibility)
-        print("\n[CODEX] Implementing...")
-        result = subprocess.run(
-            ["codex", "exec", "--full-auto", "-o", str(summary_file)],
-            input=codex_prompt,
-            text=True,
-        )
-        if result.returncode != 0:
-            feedback = "Codex failed (see output above)"
-            continue
+        if args.validate_only:
+            # Skip Codex, use existing summary or generate from recent changes
+            if summary_file.exists():
+                summary = summary_file.read_text()
+                print(f"[VALIDATE-ONLY] Using existing summary:\n{summary}")
+            else:
+                summary = "(no Codex summary - validating current state)"
+                print(f"[VALIDATE-ONLY] {summary}")
+        else:
+            # 1. Codex implements (stream output to terminal for visibility)
+            print("\n[CODEX] Implementing...")
+            result = subprocess.run(
+                ["codex", "exec", "--full-auto", "-o", str(summary_file)],
+                input=codex_prompt,
+                text=True,
+            )
+            if result.returncode != 0:
+                feedback = "Codex failed (see output above)"
+                continue
 
-        summary = summary_file.read_text() if summary_file.exists() else "(no summary generated)"
-        print(f"[CODEX SUMMARY]\n{summary}")
+            summary = summary_file.read_text() if summary_file.exists() else "(no summary generated)"
+            print(f"[CODEX SUMMARY]\n{summary}")
 
         # 2. Claude validates (and commits if ready)
         print("\n[CLAUDE] Validating...")
@@ -185,6 +195,11 @@ Otherwise your output becomes feedback for the next Codex iteration. Be specific
 
         # Otherwise, use validation as feedback for next iteration
         feedback = validation
+
+        # For validate-only, exit after one pass (no Codex to iterate with)
+        if args.validate_only:
+            print("\n[VALIDATE-ONLY] Feedback generated (no Codex iteration)")
+            return 2  # Distinct exit code: neither complete nor blocked
 
     print(f"\n[FAILED] Max iterations ({max_iter}) reached")
     return 1
