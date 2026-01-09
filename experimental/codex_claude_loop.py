@@ -37,6 +37,8 @@ def main():
     parser.add_argument("task", type=Path, help="Task file path")
     parser.add_argument("--max-iter", type=int, default=50, help="Max iterations (default: 50)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without running")
+    # TODO: maybe default should be resume, --no-resume or --fresh turns it off
+    parser.add_argument("--resume", action="store_true", help="Load previous validation as feedback for Codex")
     args = parser.parse_args()
 
     check_dependencies()
@@ -65,6 +67,9 @@ def main():
     print()
 
     feedback = ""
+    if args.resume and validation_file.exists():
+        feedback = validation_file.read_text()
+        print(f"[RESUME] Loaded previous validation as feedback")
 
     for i in range(max_iter):
         print(f"\n{'='*60}")
