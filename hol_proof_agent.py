@@ -557,16 +557,20 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                         handoff_prompt = (
                             "STOP. Context clearing - your todo list will NOT persist. "
-                            "1) If you made substantial progress, commit it: "
+                            "1) PLAN CHECK: Are you following the task's <proof_strategy>? "
+                            "   - Which recommended lemmas are you using? "
+                            "   - If diverged, document why in scratch file. "
+                            "2) If you made substantial progress, commit it: "
                             "   - NEVER `git add -A` or `git add .` - only specific .sml files "
                             "   - Use `git diff <file>` to verify before adding "
-                            "2) Ultrathink like a prompt engineer and write handoff notes to "
+                            "3) Ultrathink like a prompt engineer and write handoff notes to "
                             f"{config.scratch_file} (NOT the task file). Include: "
+                            "   - Current approach (cite plan section if applicable) "
                             "   - What you tried, what worked "
                             "   - What to try next (be specific - this is your only memory) "
                             "   (goals/holmake are auto-injected at startup) "
-                            "3) Leave HOL session running. "
-                            "4) STOP after updating scratch file."
+                            "4) Leave HOL session running. "
+                            "5) STOP after updating scratch file."
                         )
 
                         print(f"[SEND] {handoff_prompt}")
@@ -588,6 +592,12 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         if message.result:
                             print(f"  [RESULT TEXT] {message.result}")
                         cont = "Continue. Start your message with [PROOF_COMPLETE] when done."
+                        # Periodic size info (every 20 messages, matches prompt's reflection cadence)
+                        if state.session_message_count % 20 == 0:
+                            large_files = get_large_files(config.working_dir)
+                            if large_files:
+                                file_list = ", ".join(f"{f} ({n}L)" for f, n in large_files[:3])
+                                cont += f" (Note: Large files: {file_list})"
                         print(f"[SEND] {cont}")
                         await client.query(cont)
 

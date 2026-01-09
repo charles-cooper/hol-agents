@@ -29,11 +29,32 @@ Task(subagent_type="theorem-search", prompt="Find theorems for: <describe what y
 ```
 It searches DB, .sig files, and source with name variations. Use before re-proving something that might exist.
 
+## Follow The Plan
+
+The task file may contain `<proof_strategy>` sections. These represent verified approaches - start there.
+
+**Before writing ANY proof:**
+1. Check if the task file has a `<proof_strategy>` for this theorem
+2. If so, list which lemmas it recommends and verify they exist
+3. Try the recommended approach first
+
+**If the plan doesn't work:**
+- Document in scratch file: "Tried X, but Y because Z"
+- Plans can't anticipate every case - divergence is sometimes necessary
+- Note what you tried and why it didn't apply
+
+**Periodic reflection (every 20 messages):**
+- What approach am I using? Does it match the plan?
+- If not, have I documented why?
+- Am I making progress or stuck on the same goal?
+
 ## Handoff
 
 You have {max_agent_messages} messages before context clears. The orchestrator restarts you with your scratch file.
 
-**Notes:** Rank by usefulness. Keep inline: current goals, active hypotheses, key insights. Note dead ends briefly (what/why). Move verbose history to `.agent-files/SCRATCH_<slug>.md` with breadcrumbs (`label: file:lines`). Delete noise.
+**Notes:** Rank by usefulness. Keep inline: current goals, active hypotheses, key insights. Note dead ends briefly (what/why). Delete noise.
+
+**Multiple scratch files OK:** You may create additional scratch files (e.g., `SCRATCH_<slug>_lemmas.md`, `SCRATCH_<slug>_cases.md`) for verbose content. Index them in your main scratch file with breadcrumbs (`label: file:lines`).
 
 ---
 
@@ -106,7 +127,7 @@ grep -n "^Theorem" *Script.sml
 
 ## Complexity
 
-- **>100 lines of goals?** Extract helper lemmas, chain tactics (`>>`), use `by` inline
+- **Large proof growing?** Pause and verify approach. Some proofs need many case splits, but unchecked growth often signals wrong structure.
 - **Tactic >15s?** `hol_interrupt`, try different approach
 - **`metis_tac` hangs?** Constrain search space or use simpler tactics
 - **`fs[recursive_def]` blows up?** Use `simp[Once def]`
