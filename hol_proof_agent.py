@@ -647,7 +647,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="HOL4 Proof Agent")
-    parser.add_argument("--task", "-t", required=True, help="Task file (TASK_*.md)")
+    parser.add_argument("task", help="Task file (TASK_*.md)")
     parser.add_argument("--claude-md", "-c", help="CLAUDE.md path")
     parser.add_argument("--prompt", "-p", help="Initial prompt")
     parser.add_argument("--fresh", action="store_true", help="Ignore saved session")
