@@ -87,7 +87,7 @@ def main():
 ## Instructions
 First, restate the goal in your own words and outline your implementation plan. Then implement fully. Keep going until the task is completely resolved.
 
-Do NOT commit - validation and commit is handled separately.
+Commit completed chunks of work as you go (stage specific files, never `git add .` or directories).
 ONLY modify the task file to check off completed items and list scratch files in use. Use one or more scratch files (e.g. .agent-files/SCRATCH_<slug>.md) for notes/progress.
 
 If you hit a blocker or can't complete, it's ok to stop and explain the issue. Claude will review and provide guidance for the next iteration.
@@ -98,6 +98,12 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
         if args.dry_run:
             print(f"[DRY RUN] Codex prompt:\n{codex_prompt}")
             return 0
+
+        # Capture baseline commit before Codex runs
+        baseline_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=workdir
+        ).stdout.strip()
 
         # 1. Codex implements (stream output to terminal for visibility)
         print("\n[CODEX] Implementing...")
@@ -126,6 +132,10 @@ You are the validation gate in a Codex->Claude loop. Be thorough--bugs that pass
 ## Codex Summary
 {summary}
 
+## Baseline
+Commit before Codex ran: {baseline_commit}
+Use `git diff {baseline_commit}..HEAD` or `git log {baseline_commit}..HEAD` to see what changed.
+
 ## Instructions
 
 Read the source files. Run builds/tests as appropriate for the project. Verify:
@@ -134,7 +144,7 @@ Read the source files. Run builds/tests as appropriate for the project. Verify:
 3. No bugs or issues
 4. No dead code (but only flag this after everything else works - some code may just not be wired yet)
 
-Commit any complete chunk of work (stage specific files only, never git add . or directories).
+Codex may have already committed work. Commit any additional complete work (stage specific files only, never git add . or directories).
 
 When entire task is done, end with exactly: [COMPLETE]
 
