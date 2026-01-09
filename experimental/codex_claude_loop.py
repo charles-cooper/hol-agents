@@ -88,7 +88,7 @@ def main():
 First, restate the goal in your own words and outline your implementation plan. Then implement fully. Keep going until the task is completely resolved.
 
 Do NOT commit - validation and commit is handled separately.
-Do NOT modify the task file. Use a scratch file (e.g. .agent-files/SCRATCH_<slug>.md) for notes/progress.
+ONLY modify the task file to check off completed items and list scratch files in use. Use one or more scratch files (e.g. .agent-files/SCRATCH_<slug>.md) for notes/progress.
 
 If you hit a blocker or can't complete, it's ok to stop and explain the issue. Claude will review and provide guidance for the next iteration.
 """
@@ -141,6 +141,7 @@ If the implementation is correct and complete:
 
 IF AND ONLY IF THE task requires human intervention (i.e., the theorem actually cannot be proven):
 - End your response with exactly: [BLOCKED]
+DO NOT RESPOND WITH BLOCKED IF CODEX CAN FIGURE IT OUT
 
 Otherwise your output becomes feedback for the next Codex iteration. Be specific about what files to change and how.
 """
