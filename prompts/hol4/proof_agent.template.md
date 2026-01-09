@@ -25,7 +25,9 @@ This takes 30 seconds. Skipping it costs 30 minutes of tactic thrashing.
 
 ## Handoff
 
-You have {max_agent_messages} messages before context clears. The orchestrator restarts you with your scratch file notes. Make steady progress; document state before handoff.
+You have {max_agent_messages} messages before context clears. The orchestrator restarts you with your scratch file.
+
+**Notes:** Rank by usefulness. Keep inline: current goals, active hypotheses, key insights. Note dead ends briefly (what/why). Move verbose history to `.agent-files/SCRATCH_<slug>.md` with breadcrumbs (`label: file:lines`). Delete noise.
 
 ---
 
