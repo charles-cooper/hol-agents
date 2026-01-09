@@ -568,18 +568,22 @@ async def hol_cursor_status(session: str) -> str:
     Args:
         session: Session name
 
-    Returns: Current theorem, position, completed list, all remaining cheats
+    Returns: Progress, current theorem, completed proofs (ground truth from file), remaining cheats
     """
     cursor = _get_cursor(session)
     if not cursor:
         return f"ERROR: No cursor for session '{session}'. Use hol_cursor_init() first."
 
     status = cursor.status
+    # Ground truth: theorems without cheats in file (not just session-completed)
+    complete_in_file = [t.name for t in cursor.theorems if not t.has_cheat]
+    total = len(cursor.theorems)
+
     lines = [
         f"File: {status['file']}",
-        f"Position: {status['position']}",
+        f"Progress: {len(complete_in_file)}/{total} theorems complete",
         f"Current: {status['current']} (line {status['current_line']})" if status['current'] else "Current: None",
-        f"Completed: {', '.join(status['completed']) or 'None'}",
+        f"Completed: {', '.join(complete_in_file) or 'None'}",
         "",
         f"Remaining cheats ({len(status['cheats'])}):",
     ]

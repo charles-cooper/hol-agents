@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     PermissionResultAllow,
@@ -167,13 +168,38 @@ class AgentState:
             return cls(path=path)
 
 
-def read_file(path: str) -> str:
+def read_file(path: str | Path) -> str:
     """Read a file, return empty string on error."""
     try:
         with open(path, 'r') as f:
             return f.read()
     except Exception:
         return ""
+
+
+def strip_frontmatter(content: str) -> str:
+    """Strip YAML frontmatter from markdown."""
+    if content.startswith("---"):
+        end = content.find("---", 3)
+        if end != -1:
+            return content[end + 3:].lstrip("\n")
+    return content
+
+
+def get_subagents() -> dict[str, AgentDefinition]:
+    """Load subagent definitions for the proof agent."""
+    script_dir = Path(__file__).parent
+    raw = read_file(script_dir / "prompts" / "hol4" / "theorem_search_agent.md")
+    prompt = strip_frontmatter(raw) if raw else ""
+
+    return {
+        "theorem-search": AgentDefinition(
+            description="Finds existing theorems matching design concepts. Use when stuck, before re-proving, or to locate lemmas by fuzzy name/signature.",
+            prompt=prompt or "Search for theorems using DB.find, .sig files, and source grep.",
+            tools=["Read", "Grep", "Glob", "mcp__hol__*"],
+            model="opus",
+        ),
+    }
 
 
 def derive_scratch_file(task_file: str) -> str:
@@ -307,13 +333,14 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                 cwd=config.working_dir,
                 model=config.model,
                 system_prompt=system_prompt,
-                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "mcp__hol__*"],
+                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "mcp__hol__*"],
                 disallowed_tools=["TodoRead", "TodoWrite"],
                 mcp_servers=MCP_SERVER_CONFIG,
                 resume=state.session_id,
                 can_use_tool=tool_permission,
                 max_thinking_tokens=config.max_thinking_tokens,
                 include_partial_messages=True,  # Get StreamEvents for per-turn token tracking
+                agents=get_subagents(),
             )
 
             async with ClaudeSDKClient(opts) as client:
@@ -356,10 +383,12 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
 
                         if entry.cursor:
                             status = entry.cursor.status
+                            # Ground truth: count theorems without cheats in file
+                            complete_count = sum(1 for t in entry.cursor.theorems if not t.has_cheat)
+                            total_count = len(entry.cursor.theorems)
                             hol_state += f"\n\n[auto] hol_cursor_status(\"{state.hol_session}\"):\n"
-                            hol_state += f"File: {status['file']}\n"
-                            hol_state += f"Position: {status['position']}, Current: {status['current']} (line {status['current_line']})\n"
-                            hol_state += f"Remaining cheats: {len(status['cheats'])}"
+                            hol_state += f"Progress: {complete_count}/{total_count} theorems complete\n"
+                            hol_state += f"Current: {status['current']} (line {status['current_line']})"
                         else:
                             hol_state += f"\n\n[auto] hol_cursor_status(\"{state.hol_session}\"): (none)"
 
@@ -523,12 +552,13 @@ async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -
                         cwd=config.working_dir,
                         model=config.model,
                         system_prompt=system_prompt,
-                        allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "mcp__hol__*"],
+                        allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "mcp__hol__*"],
                         disallowed_tools=["TodoRead", "TodoWrite"],
                         mcp_servers=MCP_SERVER_CONFIG,
                         resume=state.session_id,
                         can_use_tool=tool_permission,
                         max_thinking_tokens=config.max_thinking_tokens,
+                        agents=get_subagents(),
                     )
                     async with ClaudeSDKClient(opts) as client:
                         print(f"[SEND] {user_input}")

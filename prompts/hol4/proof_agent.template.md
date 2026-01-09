@@ -73,6 +73,29 @@ No `rotate()` in goaltree - use `>-` to structure proof order, or `REVERSE tac` 
 
 **Search:** `DB.find "name"` | `DB.match [] \`\`pat\`\`` | `DB.theorems "thy"`
 
+## Finding Available Theorems
+
+Before proving something, check if it exists:
+
+**Quick search:** Use `hol_send` with:
+```sml
+DB.find "APPEND";                (* name substring *)
+DB.match [] ``APPEND x (APPEND y z)``;  (* term structure *)
+DB.theorems "listTheory";        (* list theory contents *)
+```
+
+**Read .sig files:** Theory signatures show all exported theorems:
+- `$HOLDIR/src/list/listTheory.sig` - list operations
+- `$HOLDIR/src/arithmetic/arithmeticTheory.sig` - nat arithmetic
+- Check with: `grep "val.*_def\|val.*_thm" *Theory.sig`
+
+**Staleness:** If .sig is older than Script.sml or build is failing, grep source instead:
+```bash
+grep -n "^Theorem" *Script.sml
+```
+
+**Complex search:** If simple queries fail (name variations, fuzzy matching needed), spawn the `theorem-search` subagent via Task tool.
+
 ## Complexity
 
 - **>100 lines of goals?** Extract helper lemmas, chain tactics (`>>`), use `by` inline

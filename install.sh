@@ -71,6 +71,23 @@ fi
 ln -s "$SKILL_DIR" "$SKILLS_TARGET/hol4"
 echo "Installed skills: $SKILLS_TARGET/hol4 -> $SKILL_DIR"
 
+# --- Agents ---
+AGENTS_TARGET="$PROJECT_CLAUDE_DIR/agents"
+AGENT_SOURCE="$REPO_DIR/prompts/hol4/theorem_search_agent.md"
+
+mkdir -p "$AGENTS_TARGET"
+
+if [[ -L "$AGENTS_TARGET/theorem-search.md" ]]; then
+    rm "$AGENTS_TARGET/theorem-search.md"
+elif [[ -e "$AGENTS_TARGET/theorem-search.md" ]]; then
+    echo "WARNING: $AGENTS_TARGET/theorem-search.md exists and is not a symlink, skipping" >&2
+fi
+
+if [[ ! -e "$AGENTS_TARGET/theorem-search.md" ]]; then
+    ln -s "$AGENT_SOURCE" "$AGENTS_TARGET/theorem-search.md"
+    echo "Installed agent: $AGENTS_TARGET/theorem-search.md -> $AGENT_SOURCE"
+fi
+
 # --- MCP ---
 MCP_JSON=".mcp.json"
 
@@ -121,7 +138,8 @@ fi
 
 echo ""
 echo "HOL4 tools installed. Available in Claude Code:"
-echo "  Skills: /plan, /sketch, /prove"
+echo "  Skills: /hol4-plan, /hol4-sketch, /hol4-prove"
+echo "  Agents: theorem-search (via Task tool)"
 echo "  MCP: hol_start, hol_send, holmake, hol_cursor_*"
 
 if [[ "$TRANSPORT" == "http" ]]; then

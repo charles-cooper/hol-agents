@@ -18,6 +18,21 @@ else
     echo "No skills symlink found"
 fi
 
+# --- Agents ---
+AGENT_TARGET=".claude/agents/theorem-search.md"
+
+if [[ -L "$AGENT_TARGET" ]]; then
+    rm "$AGENT_TARGET"
+    echo "Removed agent symlink: $AGENT_TARGET"
+    if rmdir ".claude/agents" 2>/dev/null; then
+        echo "Removed empty .claude/agents directory"
+    fi
+elif [[ -e "$AGENT_TARGET" ]]; then
+    echo "WARNING: $AGENT_TARGET exists but is not a symlink, skipping"
+else
+    echo "No agent symlink found"
+fi
+
 # --- MCP ---
 MCP_JSON=".mcp.json"
 
