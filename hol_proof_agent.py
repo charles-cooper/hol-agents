@@ -125,6 +125,7 @@ class AgentConfig:
     max_thinking_tokens: int = 31999  # Extended thinking budget (ultrathink default)
     fresh: bool = False
     enable_logging: bool = True
+    dry_run: bool = False  # Print prompts and exit
 
     @property
     def state_path(self) -> str:
@@ -304,8 +305,61 @@ MCP_SERVER_CONFIG = {
 }
 
 
+def build_user_prompt_static(config: AgentConfig, initial_prompt: Optional[str] = None) -> str:
+    """Build the static parts of the user prompt (no HOL state)."""
+    task = read_file(config.task_file)
+    scratch = read_file(config.scratch_file)
+    init = read_file(os.path.join(config.working_dir, ".hol_init.sml"))
+
+    prompt = f"## Task File: {config.task_file}\n{task}\n\n"
+    if scratch:
+        prompt += f"## Scratch File: {config.scratch_file}\n{scratch}\n\n"
+    if init:
+        prompt += f"## .hol_init.sml\n{init}\n\n"
+
+    prompt += "Begin."
+    if scratch:
+        prompt += " Check scratch file for previous handoff state."
+    prompt += "\n\n[HOL state injected here at runtime: hol_sessions, top_goals, cursor_status, holmake]"
+    if initial_prompt:
+        prompt += f"\n\n{initial_prompt}"
+
+    return prompt
+
+
+def print_prompts(config: AgentConfig, initial_prompt: Optional[str] = None) -> None:
+    """Print system and user prompts for debugging."""
+    system_prompt = build_system_prompt(config)
+    user_prompt = build_user_prompt_static(config, initial_prompt)
+
+    print("=" * 80)
+    print("SYSTEM PROMPT")
+    print("=" * 80)
+    print(system_prompt)
+    print()
+    print("=" * 80)
+    print("USER PROMPT (static parts)")
+    print("=" * 80)
+    print(user_prompt)
+    print()
+    print("=" * 80)
+    print("SUBAGENTS")
+    print("=" * 80)
+    for name, agent in get_subagents().items():
+        print(f"\n--- {name} ---")
+        print(f"Description: {agent.description}")
+        print(f"Tools: {agent.tools}")
+        print(f"Model: {agent.model}")
+        print(f"Prompt:\n{agent.prompt[:500]}..." if len(agent.prompt) > 500 else f"Prompt:\n{agent.prompt}")
+
+
 async def run_agent(config: AgentConfig, initial_prompt: Optional[str] = None) -> bool:
     """Run the agent until completion."""
+    # Dry-run: print prompts and exit
+    if config.dry_run:
+        print_prompts(config, initial_prompt)
+        return True
+
     if config.enable_logging:
         setup_logging(config.working_dir)
         log(f"=== Agent started: {config.task_file} ===")
@@ -602,6 +656,7 @@ def main():
     parser.add_argument("--max-context-tokens", type=int, default=100000, help="Handoff when context exceeds N tokens (default 100k = half of 200k window)")
     parser.add_argument("--thinking-tokens", type=int, default=31999, help="Extended thinking budget (ultrathink=31999)")
     parser.add_argument("--no-log", action="store_true", help="Disable debug logging to file")
+    parser.add_argument("--dry-run", action="store_true", help="Print prompts and exit (for debugging)")
 
     args = parser.parse_args()
 
@@ -628,6 +683,7 @@ def main():
         max_thinking_tokens=args.thinking_tokens,
         fresh=args.fresh,
         enable_logging=not args.no_log,
+        dry_run=args.dry_run,
     )
 
     if args.fresh and os.path.exists(config.state_path):
