@@ -164,6 +164,10 @@ Then use `/hol4-plan`, `/hol4-sketch`, `/hol4-prove` to adopt each phase's metho
 - **All HOL via MCP** - Never direct Bash to HOL
 - **Cursor workflow is primary** - init → (prove → complete) × N → done
 
+## Agent File Management
+
+[TaskManager.exe](https://pypi.org/project/taskmanager-exe/) is recommended for managing `.agent-files/` scratch space (task files, memory, status, handoffs).
+
 ## Requirements
 
 - Python 3.10+
