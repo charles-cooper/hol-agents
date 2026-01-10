@@ -13,7 +13,15 @@ import argparse
 import shutil
 import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
+
+
+def log(msg: str, file=None):
+    """Print with timestamp."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}", file=file or sys.stdout)
 
 
 def check_dependencies():
@@ -63,19 +71,18 @@ def main():
     summary_file = scratch_dir / "codex_summary.md"
     validation_file = scratch_dir / "claude_validation.md"
 
-    print(f"Task: {args.task}")
-    print(f"Max iterations: {max_iter}")
-    print()
+    log(f"Task: {args.task}")
+    log(f"Max iterations: {max_iter}")
 
     feedback = ""
     if args.resume and validation_file.exists():
         feedback = validation_file.read_text()
-        print(f"[RESUME] Loaded previous validation as feedback")
+        log("[RESUME] Loaded previous validation as feedback")
 
     for i in range(max_iter):
-        print(f"\n{'='*60}")
-        print(f"Iteration {i+1}/{max_iter}")
-        print("=" * 60)
+        log(f"\n{'='*60}")
+        log(f"Iteration {i+1}/{max_iter}")
+        log("=" * 60)
 
         # Build Codex prompt
         codex_prompt = f"""## Task
@@ -99,7 +106,7 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
             codex_prompt += f"\n## Previous Validation Feedback\nAddress this feedback:\n{feedback}"
 
         if args.dry_run:
-            print(f"[DRY RUN] Codex prompt:\n{codex_prompt}")
+            log(f"[DRY RUN] Codex prompt:\n{codex_prompt}")
             return 0
 
         # Capture baseline commit before Codex runs
@@ -112,13 +119,13 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
             # Skip Codex, use existing summary or generate from recent changes
             if summary_file.exists():
                 summary = summary_file.read_text()
-                print(f"[VALIDATE-ONLY] Using existing summary:\n{summary}")
+                log(f"[VALIDATE-ONLY] Using existing summary:\n{summary}")
             else:
                 summary = "(no Codex summary - validating current state)"
-                print(f"[VALIDATE-ONLY] {summary}")
+                log(f"[VALIDATE-ONLY] {summary}")
         else:
             # 1. Codex implements (stream output to terminal for visibility)
-            print("\n[CODEX] Implementing...")
+            log("[CODEX] Implementing...")
             result = subprocess.run(
                 ["codex", "exec", "--full-auto", "-o", str(summary_file)],
                 input=codex_prompt,
@@ -129,10 +136,10 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
                 continue
 
             summary = summary_file.read_text() if summary_file.exists() else "(no summary generated)"
-            print(f"[CODEX SUMMARY]\n{summary}")
+            log(f"[CODEX SUMMARY]\n{summary}")
 
         # 2. Claude validates (and commits if ready)
-        print("\n[CLAUDE] Validating...")
+        log("[CLAUDE] Validating...")
 
         validation_prompt = f"""ultrathink
 
@@ -167,30 +174,44 @@ DO NOT RESPOND WITH BLOCKED IF CODEX CAN FIGURE IT OUT
 Otherwise your output becomes feedback for the next Codex iteration. Be specific about what files to change and how.
 """
 
-        result = subprocess.run(
-            ["claude", "-p", "--model", "opus"],
-            input=validation_prompt,
-            text=True,
-            stdout=subprocess.PIPE,
-            cwd=workdir,
-        )
-        if result.returncode != 0:
-            feedback = "Claude validation failed (see output above)"
-            validation_file.write_text(feedback)
-            continue
+        # Run Claude with retries (keep trying until success)
+        validation = None
+        attempt = 0
+        while validation is None:
+            attempt += 1
+            result = subprocess.run(
+                ["claude", "-p", "--model", "opus"],
+                input=validation_prompt,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=workdir,
+            )
+            if result.returncode == 0:
+                validation = result.stdout
+                break
+            # Log failure to stderr
+            log(f"[CLAUDE] Attempt {attempt} failed (exit {result.returncode})", file=sys.stderr)
+            if result.stdout:
+                log(f"[CLAUDE STDOUT]\n{result.stdout}", file=sys.stderr)
+            if result.stderr:
+                log(f"[CLAUDE STDERR]\n{result.stderr}", file=sys.stderr)
+            # Backoff: wait before retry (cap at 45min)
+            delay = min(60 * attempt, 45 * 60)
+            log(f"[CLAUDE] Retrying in {delay}s...", file=sys.stderr)
+            time.sleep(delay)
 
-        validation = result.stdout
         validation_file.write_text(validation)
-        print(f"\n[VALIDATION]\n{validation}")
+        log(f"[VALIDATION]\n{validation}")
 
         # Check for completion markers at end of output
         validation_stripped = validation.strip()
         if validation_stripped.endswith("[COMPLETE]"):
-            print("\n[COMPLETE] Task finished")
+            log("[COMPLETE] Task finished")
             return 0
 
         if validation_stripped.endswith("[BLOCKED]"):
-            print("\n[BLOCKED] Task cannot be completed as specified")
+            log("[BLOCKED] Task cannot be completed as specified")
             return 1
 
         # Otherwise, use validation as feedback for next iteration
@@ -198,10 +219,10 @@ Otherwise your output becomes feedback for the next Codex iteration. Be specific
 
         # For validate-only, exit after one pass (no Codex to iterate with)
         if args.validate_only:
-            print("\n[VALIDATE-ONLY] Feedback generated (no Codex iteration)")
+            log("[VALIDATE-ONLY] Feedback generated (no Codex iteration)")
             return 2  # Distinct exit code: neither complete nor blocked
 
-    print(f"\n[FAILED] Max iterations ({max_iter}) reached")
+    log(f"[FAILED] Max iterations ({max_iter}) reached")
     return 1
 
 
