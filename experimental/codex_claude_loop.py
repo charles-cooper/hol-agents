@@ -24,6 +24,15 @@ def log(msg: str, file=None):
     print(f"[{ts}] {msg}", file=file or sys.stdout)
 
 
+def get_git_common_dir(workdir: Path) -> str:
+    """Get the git common directory (handles worktrees where .git is in parent repo)."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"],
+        capture_output=True, text=True, cwd=workdir
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def check_dependencies():
     """Verify required binaries are available."""
     missing = []
@@ -126,8 +135,12 @@ If you hit a blocker or can't complete, it's ok to stop and explain the issue. C
         else:
             # 1. Codex implements (stream output to terminal for visibility)
             log("[CODEX] Implementing...")
+            codex_cmd = ["codex", "exec", "--full-auto", "-o", str(summary_file)]
+            git_common_dir = get_git_common_dir(workdir)
+            if git_common_dir:
+                codex_cmd.extend(["--add-dir", git_common_dir])
             result = subprocess.run(
-                ["codex", "exec", "--full-auto", "-o", str(summary_file)],
+                codex_cmd,
                 input=codex_prompt,
                 text=True,
             )
